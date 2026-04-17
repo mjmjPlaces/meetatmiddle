@@ -1,4 +1,4 @@
-const friendsEl = document.getElementById("friends");
+﻿const friendsEl = document.getElementById("friends");
 const addFriendBtn = document.getElementById("addFriend");
 const runBtn = document.getElementById("run");
 const modeEl = document.getElementById("mode");
@@ -14,6 +14,8 @@ const sheetSubtitleEl = document.getElementById("sheetSubtitle");
 const friendSelectEl = document.getElementById("friendSelect");
 const pathListEl = document.getElementById("pathList");
 const friendTimeListEl = document.getElementById("friendTimeList");
+const locateBtnEl = document.getElementById("locateBtn");
+const stickyShareBtnEl = document.getElementById("stickyShare");
 const stationPlaceholders = [
   "ex. 신도림역",
   "ex. 문정역",
@@ -50,6 +52,7 @@ let routeMarkers = [];
 let routeLabelOverlays = [];
 let reasonOverlays = [];
 let kakaoJsKey = "";
+let lastSharePayload = null;
 
 async function injectKakaoSdk() {
   if (sdkInjected) return;
@@ -179,6 +182,17 @@ function clearMapObjects() {
   markers = [];
   infoWindows = [];
   reasonOverlays = [];
+}
+
+function updateStickyShareButton() {
+  if (!stickyShareBtnEl) return;
+  if (!lastSharePayload) {
+    stickyShareBtnEl.classList.add("hidden");
+    stickyShareBtnEl.disabled = true;
+    return;
+  }
+  stickyShareBtnEl.classList.remove("hidden");
+  stickyShareBtnEl.disabled = false;
 }
 
 function setCandidateMarkersVisible(visible) {
@@ -519,8 +533,8 @@ async function openCandidateDetails(item, address) {
     renderPathList(summarizeOdsayPath(raw));
     void drawRouteOnMap(raw);
     addRouteMarkers(pf?.startPoint, item?.candidate, {
-      startLabel: `출발(${pf?.friendName ?? "친구"})`,
-      endLabel: `도착(${item?.candidate?.name ?? "중간지점"})`
+      startLabel: `🏃‍♂️ 출발(${pf?.friendName ?? "친구"})`,
+      endLabel: `🚩 도착(${item?.candidate?.name ?? "중간지점"})`
     });
   };
   friendSelectEl.onchange = update;
@@ -559,23 +573,25 @@ async function renderTopCandidates(results) {
   kakao.maps.event.addListener(marker, "dblclick", () => openCandidateDetails(item, address));
 
   const card = document.createElement("div");
-  card.className = "card";
+  card.className = "rounded-3xl border border-coral-100 bg-white p-4 shadow-softCard app-fade";
   card.innerHTML = `
-    <strong>추천 1순위 - ${name}</strong>
-    <div class="meta">주소: ${address}</div>
-    <div class="meta">신뢰 등급: ${item?.candidate?.tier ? `Tier ${item.candidate.tier}` : "일반 후보"}</div>
+    <strong class="text-slate-800">🌟 추천 1순위 - ${name}</strong>
+    <div class="mt-1 text-xs text-slate-500">주소: ${address}</div>
+    <div class="mt-1 text-xs text-slate-500">신뢰 등급: ${
+      item?.candidate?.tier ? `Tier ${item.candidate.tier}` : "일반 후보"
+    }</div>
     ${
       item?.candidate?.shiftedFrom
-        ? `<div class="meta">후보 보정: ${escapeHtml(item.candidate.shiftedFrom)} → ${escapeHtml(
+        ? `<div class="mt-1 text-xs text-slate-500">후보 보정: ${escapeHtml(item.candidate.shiftedFrom)} → ${escapeHtml(
             item.candidate.name
           )}</div>`
         : ""
     }
-    <div class="meta">선정 이유: ${reasonText}</div>
-    <div class="meta">평균 ${Math.round(item.averageMinutes)}분 · 최대 ${Math.round(item.maxMinutes)}분</div>
-    <div class="cardActions">
-      <button type="button" class="btnPrimary" data-action="details">세부 내용 조회</button>
-      <button type="button" class="btnPrimary" data-action="share">카카오톡 공유</button>
+    <div class="mt-1 text-xs text-coral-600 font-bold">선정 이유: ${reasonText}</div>
+    <div class="mt-1 text-xs text-slate-600">평균 ${Math.round(item.averageMinutes)}분 · 최대 ${Math.round(item.maxMinutes)}분</div>
+    <div class="mt-3 flex flex-wrap gap-2">
+      <button type="button" class="tap-press h-11 flex-1 rounded-2xl border border-coral-200 bg-coral-50 px-3 text-sm font-bold text-coral-600" data-action="details">세부 내용 조회</button>
+      <button type="button" class="tap-press h-11 flex-1 rounded-2xl border border-coral-200 bg-coral-50 px-3 text-sm font-bold text-coral-600" data-action="share">카카오톡 공유</button>
     </div>
   `;
   card.querySelector('[data-action="details"]').addEventListener("click", () =>
@@ -585,6 +601,8 @@ async function renderTopCandidates(results) {
     shareTopCandidate(item, address, reasonText)
   );
   cardsEl.appendChild(card);
+  lastSharePayload = { item, address, reasonText };
+  updateStickyShareButton();
 
   fitBounds([item.candidate]);
   mapStatusEl.textContent = "1순위 추천 지점과 선정 이유를 지도에 표시했습니다.";
@@ -592,10 +610,10 @@ async function renderTopCandidates(results) {
 
 function addFriendRow(name = "", address = "", addressPlaceholder = "ex. 신도림역") {
   const row = document.createElement("div");
-  row.className = "row friendRow";
+  row.className = "grid grid-cols-1 gap-2 sm:grid-cols-[120px_1fr]";
   row.innerHTML = `
-    <input type="text" placeholder="이름" value="${name}" class="name" autocomplete="name" enterkeyhint="next" />
-    <input type="text" placeholder="${addressPlaceholder}" value="${address}" class="address" autocomplete="street-address" enterkeyhint="done" />
+    <input type="text" placeholder="이름" value="${name}" class="name h-12 rounded-2xl border border-coral-200 bg-[#fffdfb] px-3" autocomplete="name" enterkeyhint="next" />
+    <input type="text" placeholder="${addressPlaceholder}" value="${address}" class="address h-12 rounded-2xl border border-coral-200 bg-[#fffdfb] px-3" autocomplete="street-address" enterkeyhint="done" />
   `;
   friendsEl.appendChild(row);
 }
@@ -632,6 +650,8 @@ runBtn.addEventListener("click", async () => {
 
   resultEl.textContent = "중간지점 계산 중...";
   cardsEl.innerHTML = "";
+  lastSharePayload = null;
+  updateStickyShareButton();
   clearMapObjects();
   try {
     const res = await fetch(apiUrl("/api/midpoint"), {
@@ -658,5 +678,34 @@ runBtn.addEventListener("click", async () => {
 
 sheetCloseEl.addEventListener("click", closeSheet);
 sheetBackdropEl.addEventListener("click", closeSheet);
+
+if (stickyShareBtnEl) {
+  stickyShareBtnEl.addEventListener("click", () => {
+    if (!lastSharePayload) return;
+    void shareTopCandidate(lastSharePayload.item, lastSharePayload.address, lastSharePayload.reasonText);
+  });
+}
+
+if (locateBtnEl) {
+  locateBtnEl.addEventListener("click", () => {
+    if (!navigator.geolocation) {
+      mapStatusEl.textContent = "이 브라우저에서는 위치 기능을 지원하지 않습니다.";
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (!isMapReady || !map) return;
+        const current = new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude);
+        map.setCenter(current);
+        map.setLevel(5);
+        mapStatusEl.textContent = "현재 위치로 이동했습니다.";
+      },
+      () => {
+        mapStatusEl.textContent = "위치 권한이 필요합니다. 브라우저 설정에서 허용해 주세요.";
+      },
+      { enableHighAccuracy: true, timeout: 7000 }
+    );
+  });
+}
 
 ensureMapReady();

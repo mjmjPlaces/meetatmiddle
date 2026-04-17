@@ -1,11 +1,37 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#fffaf7" />
+    <meta name="theme-color" content="#fff7f2" />
     <title>중간지점 찾기</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/gh/moonspam/NanumSquare@2.0/nanumsquare.css"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
     <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              coral: {
+                50: "#fff3ee",
+                100: "#ffe4d8",
+                200: "#ffc5ac",
+                400: "#ff8e6c",
+                500: "#ff6f4f",
+                600: "#e85a3b"
+              }
+            },
+            boxShadow: {
+              soft: "0 10px 28px rgba(255, 111, 79, 0.16)",
+              softCard: "0 8px 20px rgba(31, 41, 55, 0.08)"
+            }
+          }
+        }
+      };
       window.__kakaoSdk = { loaded: false, errored: false, errorDetail: "" };
       window.__onKakaoSdkLoad = function () {
         window.__kakaoSdk.loaded = true;
@@ -16,233 +42,47 @@
           "브라우저가 Kakao SDK 스크립트를 로드하지 못했습니다(네트워크/광고차단/방화벽/도메인 설정). DevTools > Network에서 sdk.js 요청이 200인지 확인하세요.";
       };
     </script>
-    <script defer src="./src/main.js"></script>
     <style>
-      :root {
-        --bg: #fffaf7;
-        --surface: #ffffff;
-        --text: #1f2937;
-        --muted: #6b7280;
-        --line: #f0d7ca;
-        --primary: #ff6f4f;
-        --primary-strong: #e85a3b;
-        --shadow: 0 12px 30px rgba(31, 41, 55, 0.08);
-      }
-      * { box-sizing: border-box; }
-      html {
+      html,
+      body {
+        font-family: "NanumSquare", "Pretendard", "Noto Sans KR", -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
         -webkit-text-size-adjust: 100%;
         text-size-adjust: 100%;
       }
       body {
-        margin: 0;
-        font-family: "Pretendard", "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        color: var(--text);
-        background:
-          radial-gradient(circle at 12% 10%, #ffe7dc 0, #fffaf7 35%),
-          radial-gradient(circle at 92% 0, #ffece3 0, #fffaf7 26%),
-          var(--bg);
-        overflow-x: hidden;
+        background: radial-gradient(circle at 10% 0%, #ffece3 0, #fff8f4 36%), #fff9f6;
       }
-      .container {
-        max-width: 1100px;
-        margin: 0 auto;
-        padding: 16px 12px;
-        padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
+      .app-fade {
+        animation: fadeIn 0.34s ease both;
       }
-      .inputPanel {
-        max-width: 760px;
-        margin: 0 auto;
-        padding: 16px;
-        border-radius: 18px;
-        border: 1px solid var(--line);
-        background: var(--surface);
-        box-shadow: var(--shadow);
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
       }
-      .row { display: flex; gap: 10px; margin-bottom: 10px; align-items: stretch; }
-      /* 친구 이름 + 주소: 데스크톱 가로, 모바일 세로 */
-      #friends .row.friendRow { align-items: center; }
-      #friends .row.friendRow .name {
-        flex: 0 0 7.5rem;
-        min-width: 0;
+      .tap-press {
+        transition: transform 0.12s ease;
       }
-      #friends .row.friendRow .address {
-        flex: 1 1 auto;
-        min-width: 0;
-        width: 100%;
+      .tap-press:active {
+        transform: scale(0.95);
       }
-      .row.modeRow { flex-wrap: wrap; }
-      .row.modeRow select { flex: 1 1 160px; min-width: 0; }
-      .row.modeRow #run { flex: 1 1 140px; min-height: 48px; }
-      input, select, button {
-        border-radius: 12px;
-        border: 1px solid #ebd2c5;
-        font-size: 14px;
-      }
-      input, select {
-        padding: 10px 12px;
-        background: #fffdfb;
-        color: var(--text);
-      }
-      input:focus, select:focus, button:focus {
-        outline: 2px solid rgba(255, 111, 79, 0.2);
-        outline-offset: 1px;
-      }
-      .btnAccent {
-        padding: 12px 16px;
-        border: 1px solid var(--primary);
-        background: var(--primary);
-        color: #fff;
-        font-weight: 700;
-        cursor: pointer;
-        min-height: 48px;
-        touch-action: manipulation;
-      }
-      .btnAccent:hover { background: var(--primary-strong); border-color: var(--primary-strong); }
-      .btnGhost {
-        padding: 12px 16px;
-        background: #fff;
-        color: var(--text);
-        font-weight: 600;
-        cursor: pointer;
-        min-height: 48px;
-        touch-action: manipulation;
-      }
-      .btnPrimary {
-        padding: 12px 14px;
-        border: 1px solid var(--primary);
-        background: #fff7f2;
-        border-radius: 10px;
-        color: #b7442a;
-        font-weight: 700;
-        cursor: pointer;
-        min-height: 44px;
-        touch-action: manipulation;
-      }
-      #mapWrap {
-        margin-top: 14px;
-        padding: 10px;
-        border-radius: 18px;
-        border: 1px solid var(--line);
-        background: var(--surface);
-        box-shadow: var(--shadow);
-      }
-      #map {
-        width: 100%;
-        height: min(74vh, 760px);
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        touch-action: pan-x pan-y pinch-zoom;
-      }
-      #mapStatus { margin-top: 8px; color: var(--muted); font-size: 13px; }
-      #cards { margin-top: 10px; }
-      .card {
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        padding: 12px;
-        background: #ffffff;
-      }
-      .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
-      .friendRow {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-        margin-top: 7px;
-        font-size: 13px;
-        color: #374151;
-      }
-      .friendName { font-weight: 700; }
-      .friendTime { color: #111827; }
-      .cardActions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-      .cardActions .btnPrimary { flex: 1 1 calc(50% - 4px); min-width: 140px; }
-      #result { margin-top: 10px; color: #333; }
-
-      /* Bottom sheet */
-      #sheetBackdrop {
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.35);
-        display: none;
-        z-index: 10000;
-      }
-      #sheet {
-        position: fixed;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: #fff;
-        border-top-left-radius: 16px;
-        border-top-right-radius: 16px;
-        box-shadow: 0 -10px 30px rgba(0,0,0,0.2);
-        display: none;
-        max-height: 85vh;
-        overflow: auto;
-        z-index: 10001;
-        padding-bottom: env(safe-area-inset-bottom, 0px);
-      }
-      #sheetHeader {
-        padding: 12px 14px;
-        border-bottom: 1px solid var(--line);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 12px;
-      }
-      #sheetTitle { font-weight: 700; }
-      #sheetClose { border: 1px solid #ccc; background: #fff; border-radius: 10px; padding: 10px 14px; cursor: pointer; min-height: 44px; touch-action: manipulation; }
-      #sheetBody { padding: 12px 14px; }
-      #friendSelect { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid #ddd; }
-      #pathList { margin: 10px 0 0; padding-left: 18px; color: #333; font-size: 14px; }
-      #pathList li { margin: 4px 0; }
-      #friendTimeList {
-        display: grid;
-        gap: 6px;
-        margin-top: 8px;
-        margin-bottom: 12px;
-      }
-      .friendTimeItem {
-        display: flex;
-        justify-content: space-between;
-        gap: 8px;
-        padding: 8px 10px;
-        border-radius: 10px;
-        border: 1px solid #f0d7ca;
-        background: #fffaf7;
-        font-size: 13px;
-      }
-      .friendTimeLabel { font-weight: 700; color: #374151; }
-      .friendTimeValue { color: #111827; }
-      .friendTimeItemLongest {
-        border-color: #ffb9a7;
-        background: #fff1ec;
-      }
-      .friendTimeBadge {
-        margin-left: 6px;
-        display: inline-block;
-        padding: 2px 6px;
-        border-radius: 999px;
-        font-size: 11px;
-        font-weight: 800;
-        color: #9e3d27;
-        background: #ffd8cc;
-        border: 1px solid #ffb9a7;
-        vertical-align: middle;
-      }
-      #result { margin-top: 10px; color: #333; }
-
-      /* Map overlay labels */
       .markerLabel {
         display: inline-flex;
         align-items: center;
         gap: 6px;
         padding: 6px 10px;
         border-radius: 999px;
-        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
         font-size: 12px;
         font-weight: 700;
-        letter-spacing: 0.2px;
-        border: 1px solid rgba(0,0,0,0.12);
-        box-shadow: 0 6px 18px rgba(0,0,0,0.15);
-        background: rgba(255,255,255,0.95);
+        border: 1px solid rgba(0, 0, 0, 0.12);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
+        background: rgba(255, 255, 255, 0.95);
         color: #111;
         white-space: nowrap;
       }
@@ -270,90 +110,134 @@
         width: 7px;
         height: 7px;
         border-radius: 999px;
-        background: var(--primary);
-        flex: 0 0 auto;
+        background: #ff6f4f;
       }
-
+      #sheetBackdrop {
+        position: fixed;
+        inset: 0;
+        display: none;
+        background: rgba(17, 24, 39, 0.38);
+        z-index: 70;
+      }
+      #sheet {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: none;
+        z-index: 80;
+      }
       @media (max-width: 720px) {
-        .container { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
-        .inputPanel { padding: 14px 12px; border-radius: 16px; }
-        #friends .row.friendRow {
-          flex-direction: column;
-          align-items: stretch;
-        }
-        #friends .row.friendRow .name {
-          flex: none;
-          width: 100%;
-        }
-        .row.modeRow {
-          flex-direction: column;
-        }
-        .row.modeRow select,
-        .row.modeRow #run {
-          width: 100%;
-          flex: none;
-        }
-        /* iOS: 입력 포커스 시 자동 확대 방지 */
-        input, select, button, textarea {
-          font-size: 16px;
-        }
-        #mapWrap { padding: 8px; margin-top: 12px; }
-        #map {
-          height: min(48vh, 360px);
-          min-height: 200px;
-        }
-        @supports (height: 1svh) {
-          #map { height: min(48svh, 360px); }
-        }
-        #mapStatus { font-size: 12px; line-height: 1.4; }
-        .card { padding: 14px 12px; }
-        .cardActions .btnPrimary {
-          flex: 1 1 100%;
-          min-width: 0;
-        }
-        #addFriend {
-          width: 100%;
+        input,
+        select,
+        button,
+        textarea {
+          font-size: 16px !important;
         }
       }
     </style>
+    <script defer src="./src/main.js"></script>
   </head>
-  <body>
-    <div class="container">
-      <section class="inputPanel">
-        <div id="friends"></div>
-        <button id="addFriend" class="btnGhost" type="button">친구 추가</button>
-        <div class="row modeRow" style="margin-top:10px; margin-bottom:0;">
-          <select id="mode" aria-label="점수 모드">
-            <option value="balanced">균등(공정)</option>
-            <option value="majority">비균등(다수 최적)</option>
-          </select>
-          <button id="run" class="btnAccent" type="button">중간지점 계산</button>
+  <body class="min-h-screen text-slate-800">
+    <div class="app-fade mx-auto w-full max-w-[480px] min-h-screen pb-28">
+      <header class="px-4 pt-4 pb-2">
+        <h1 class="text-[22px] font-extrabold tracking-tight text-slate-800">중간지점 찾기</h1>
+        <p class="mt-1 text-[13px] text-slate-500">친구들과 딱 중간에서 만나기 ✨</p>
+      </header>
+
+      <section class="px-3">
+        <div
+          id="mapWrap"
+          class="relative overflow-hidden rounded-3xl border border-coral-100 bg-white shadow-soft"
+          style="height: min(52svh, 430px)"
+        >
+          <div id="map" class="h-full w-full"></div>
+          <button
+            id="locateBtn"
+            type="button"
+            class="tap-press absolute bottom-3 right-3 z-20 h-12 w-12 rounded-full border border-coral-200 bg-white text-xl shadow-softCard"
+            aria-label="현재 위치로 이동"
+            title="현재 위치로 이동"
+          >
+            📍
+          </button>
         </div>
+        <div id="mapStatus" class="mt-2 px-1 text-[12px] text-slate-500">지도 SDK 초기화 대기 중...</div>
       </section>
 
-      <section id="mapWrap">
-        <div id="map"></div>
-        <div id="mapStatus">지도 SDK 초기화 대기 중...</div>
-        <div id="cards"></div>
-        <div id="result"></div>
+      <section
+        class="-mt-4 rounded-t-[28px] border-t border-coral-100 bg-[#fffaf7] px-3 pt-4 app-fade"
+        style="box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.08)"
+      >
+        <div class="rounded-3xl border border-coral-100 bg-white p-3 shadow-softCard">
+          <div id="friends" class="space-y-2"></div>
+          <button
+            id="addFriend"
+            type="button"
+            class="tap-press mt-2 h-12 w-full rounded-2xl border border-coral-200 bg-coral-50 font-bold text-coral-600"
+          >
+            + 친구 추가
+          </button>
+
+          <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto]">
+            <select
+              id="mode"
+              class="h-12 rounded-2xl border border-coral-200 bg-[#fffdfb] px-3 font-semibold"
+              aria-label="점수 모드"
+            >
+              <option value="balanced">균등(공정)</option>
+              <option value="majority">비균등(다수 최적)</option>
+            </select>
+            <button
+              id="run"
+              type="button"
+              class="tap-press h-12 rounded-2xl bg-coral-500 px-5 font-extrabold text-white shadow-soft active:bg-coral-600"
+            >
+              중간지점 계산
+            </button>
+          </div>
+        </div>
+
+        <div id="cards" class="mt-3 space-y-2"></div>
+        <div id="result" class="mt-2 px-1 text-[13px] text-slate-600"></div>
       </section>
     </div>
 
+    <button
+      id="stickyShare"
+      type="button"
+      class="tap-press fixed bottom-3 left-1/2 z-[90] hidden h-12 w-[min(456px,calc(100vw-20px))] -translate-x-1/2 rounded-2xl border border-yellow-300 bg-[#FEE500] px-4 font-extrabold text-[#3C1E1E] shadow-softCard"
+      style="padding-bottom: max(0px, env(safe-area-inset-bottom, 0px))"
+    >
+      카톡으로 결과 공유하기
+    </button>
+
     <div id="sheetBackdrop"></div>
     <div id="sheet" role="dialog" aria-modal="true" aria-label="경로 상세">
-      <div id="sheetHeader">
-        <div>
-          <div id="sheetTitle">상세 경로</div>
-          <div id="sheetSubtitle" class="meta"></div>
+      <div
+        class="mx-auto w-full max-w-[480px] rounded-t-[28px] border border-coral-100 bg-white p-4 shadow-[0_-12px_30px_rgba(0,0,0,0.2)]"
+      >
+        <div id="sheetHeader" class="flex items-center justify-between gap-3 border-b border-coral-100 pb-3">
+          <div>
+            <div id="sheetTitle" class="text-base font-extrabold">상세 경로</div>
+            <div id="sheetSubtitle" class="mt-1 text-xs text-slate-500"></div>
+          </div>
+          <button
+            id="sheetClose"
+            type="button"
+            class="tap-press h-11 rounded-2xl border border-coral-200 bg-coral-50 px-4 text-sm font-bold text-coral-600"
+          >
+            닫기
+          </button>
         </div>
-        <button id="sheetClose" type="button">닫기</button>
-      </div>
-      <div id="sheetBody">
-        <div class="meta">전체 친구 소요시간</div>
-        <div id="friendTimeList"></div>
-        <div class="meta" style="margin-bottom:8px;">친구 선택 후 상세 경로</div>
-        <select id="friendSelect"></select>
-        <ul id="pathList"></ul>
+
+        <div id="sheetBody" class="pt-3">
+          <div class="text-xs font-semibold text-slate-500">전체 친구 소요시간</div>
+          <div id="friendTimeList" class="mt-2 grid gap-2"></div>
+          <div class="mb-2 mt-3 text-xs font-semibold text-slate-500">친구 선택 후 상세 경로</div>
+          <select id="friendSelect" class="h-12 w-full rounded-2xl border border-coral-200 px-3"></select>
+          <ul id="pathList" class="mt-3 list-disc pl-5 text-sm text-slate-700"></ul>
+        </div>
       </div>
     </div>
   </body>
