@@ -1,6 +1,7 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getApiMetrics, loadLane } from "./apis.js";
@@ -8,11 +9,33 @@ import { findMidpoints, getMidpointRunMeta } from "./midpointService.js";
 import { MidpointRequest } from "./types.js";
 
 const app = express();
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-// In production, compiled code lives under dist/server — __dirname/../ would be dist/ (no index.html).
-// npm start / npm run dev are run from repo root, so cwd is the correct static root.
-const webRoot = process.cwd();
+
+/** Repo root (where index.html lives). Railway cwd is not always the repo root; resolve from this file. */
+function resolveWebRoot(): string {
+  const dir = path.dirname(fileURLToPath(import.meta.url));
+  const normalized = dir.replace(/\\/g, "/");
+  const candidates: string[] = [];
+  if (normalized.includes("/dist/server")) {
+    candidates.push(path.resolve(dir, "..", ".."));
+  }
+  candidates.push(path.resolve(dir, ".."));
+  candidates.push(process.cwd());
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(path.join(c, "index.html"))) {
+        return c;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return candidates[0];
+}
+
+const webRoot = resolveWebRoot();
+if (process.env.NODE_ENV === "production") {
+  console.log("[static] webRoot =", webRoot);
+}
 const nodeEnv = process.env.NODE_ENV ?? "development";
 const configuredOrigins = (process.env.ALLOWED_ORIGINS ?? "")
   .split(",")
