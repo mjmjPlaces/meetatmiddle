@@ -1,4 +1,5 @@
 import { TTLCache } from "./cache.js";
+import { LOCAL_DEV_FRONTEND_ORIGIN, PRODUCTION_FRONTEND_ORIGIN } from "./constants/public_origins.js";
 import { TokenBucket } from "./rateLimiter.js";
 import { CandidatePoint, Point, RouteResult } from "./types.js";
 
@@ -88,6 +89,21 @@ function mustEnv(name: string): string {
   const value = raw?.trim().replace(/^["']|["']$/g, "");
   if (!value) throw new Error(`Missing env var: ${name}`);
   return value;
+}
+
+/** ODsay WEB 플랫폼 등록 도메인. 우선순위: ODSAY_WEB_ORIGIN → production일 때 기본 Vercel URL → 로컬 개발용 localhost */
+function odsayWebOriginHeaders(): { Origin: string; Referer: string } {
+  const raw = process.env.ODSAY_WEB_ORIGIN?.trim().replace(/^["']|["']$/g, "") ?? "";
+  const fromEnv = raw.replace(/\/$/, "");
+  if (fromEnv) {
+    return { Origin: fromEnv, Referer: `${fromEnv}/` };
+  }
+  if (process.env.NODE_ENV === "production") {
+    const o = PRODUCTION_FRONTEND_ORIGIN.replace(/\/$/, "");
+    return { Origin: o, Referer: `${o}/` };
+  }
+  const l = LOCAL_DEV_FRONTEND_ORIGIN.replace(/\/$/, "");
+  return { Origin: l, Referer: `${l}/` };
 }
 
 function roundCoord(value: number, decimals = 5): number {
@@ -266,10 +282,25 @@ export async function getTransitRoute(
   const promise = (async () => {
   const apiKey = mustEnv("ODSAY_API_KEY");
   if (!hasLoggedOdsayEnv) {
+    const wh = odsayWebOriginHeaders();
     console.log("[ODsay] env check", {
       exists: Boolean(apiKey),
-      length: apiKey.length
+      length: apiKey.length,
+      ODSAY_WEB_ORIGIN_env: process.env.ODSAY_WEB_ORIGIN?.trim() ? "set" : "EMPTY",
+      originSentToOdsay: wh.Origin,
+      refererSentToOdsay: wh.Referer
     });
+    if (!process.env.ODSAY_WEB_ORIGIN?.trim()) {
+      if (process.env.NODE_ENV === "production") {
+        console.warn(
+          `[ODsay] ODSAY_WEB_ORIGIN unset — using default ${PRODUCTION_FRONTEND_ORIGIN} for WEB headers. 명시하려면 Railway에 ODSAY_WEB_ORIGIN을 설정하세요.`
+        );
+      } else {
+        console.log(
+          `[ODsay] ODSAY_WEB_ORIGIN unset — using ${LOCAL_DEV_FRONTEND_ORIGIN} (development). WEB 키 테스트는 .env에 ODSAY_WEB_ORIGIN=${PRODUCTION_FRONTEND_ORIGIN} 권장.`
+        );
+      }
+    }
     hasLoggedOdsayEnv = true;
   }
 
@@ -280,11 +311,12 @@ export async function getTransitRoute(
     `&EX=${encodeURIComponent(String(end.lng))}` +
     `&EY=${encodeURIComponent(String(end.lat))}` +
     `&apiKey=${encodeURIComponent(apiKey)}`;
+  const webHeaders = odsayWebOriginHeaders();
   const requestConfig = {
     method: "GET",
     headers: {
-      Referer: "http://localhost:4000/",
-      Origin: "http://localhost:4000"
+      Referer: webHeaders.Referer,
+      Origin: webHeaders.Origin
     }
   } as const;
 
@@ -433,7 +465,14 @@ export async function loadLane(mapObj: string): Promise<unknown> {
   for (let attempt = 1; attempt <= MAX_ODSAY_RETRY; attempt++) {
     await odsayLimiter.consume(1);
     apiMetrics.odsayCallsToday += 1;
-    const res = await fetch(requestUrl, { method: "GET" });
+    const webHeaders = odsayWebOriginHeaders();
+    const res = await fetch(requestUrl, {
+      method: "GET",
+      headers: {
+        Referer: webHeaders.Referer,
+        Origin: webHeaders.Origin
+      }
+    });
     const text = await res.text();
     if (!res.ok) {
       if (res.status === 429 && attempt < MAX_ODSAY_RETRY) {

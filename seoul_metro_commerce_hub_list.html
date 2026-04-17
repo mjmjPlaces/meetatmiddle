@@ -53,7 +53,8 @@ select,input[type=text]{font-size:13px;padding:6px 10px;border:0.5px solid var(-
   <select id="regionFilter">
     <option value="all">전체</option>
     <option value="서울">서울</option>
-    <option value="경기">경기/인천</option>
+    <option value="경기">경기</option>
+    <option value="인천">인천</option>
   </select>
   <span class="ctrl-label" style="margin-left:8px">검색</span>
   <input type="text" id="search" placeholder="역명 검색..." style="width:140px">
@@ -70,43 +71,35 @@ select,input[type=text]{font-size:13px;padding:6px 10px;border:0.5px solid var(-
 </div>
 
 <script>
-const DATA = [
-  {tier:1,region:"서울",name:"강남역",lines:["2호선","신분당선"],connectivity:5,vibe:["맛집","카페","쇼핑","술집"],psych:5,note:"수도권 최고 심리적 중심지. 사방 어디서도 '강남에서 보자'가 통함"},
-  {tier:1,region:"서울",name:"홍대입구역",lines:["2호선","공항철도","경의중앙선"],connectivity:5,vibe:["술집","카페","클럽","맛집"],psych:5,note:"20-30대 집결지. 저녁~심야 유동인구 압도적"},
-  {tier:1,region:"서울",name:"건대입구역",lines:["2호선","7호선"],connectivity:4,vibe:["맛집","술집","카페"],psych:4,note:"2·7호선 환승. 강북 동부권 핵심 상권"},
-  {tier:1,region:"서울",name:"명동역",lines:["4호선"],connectivity:3,vibe:["쇼핑","카페","맛집"],psych:4,note:"외국인·관광객 포함 전국구 인지도"},
-  {tier:1,region:"서울",name:"잠실역",lines:["2호선","8호선"],connectivity:4,vibe:["쇼핑","맛집","엔터테인먼트"],psych:5,note:"롯데월드·스타필드 코엑스 인접. 강동·경기 남동부 거점"},
-  {tier:1,region:"서울",name:"서울역",lines:["1호선","4호선","경의중앙선","공항철도"],connectivity:5,vibe:["맛집","쇼핑"],psych:4,note:"전국 철도 허브. 지방→서울 약속의 기본값"},
-  {tier:1,region:"서울",name:"용산역",lines:["1호선","경의중앙선"],connectivity:4,vibe:["쇼핑","맛집","카페"],psych:4,note:"아이파크몰 + KTX환승. 서울 서부권 허브"},
-  {tier:1,region:"경기",name:"수원역",lines:["1호선","수인분당선"],connectivity:4,vibe:["맛집","쇼핑","술집"],psych:5,note:"경기 남부 최대 상권. 화성·용인·오산 수렴"},
-  {tier:1,region:"경기",name:"판교역",lines:["신분당선","경강선"],connectivity:3,vibe:["카페","맛집","쇼핑"],psych:4,note:"IT클러스터·알파돔시티. 직장인 약속 Top3"},
-  {tier:1,region:"경기",name:"서현역",lines:["수인분당선"],connectivity:2,vibe:["맛집","카페","쇼핑"],psych:4,note:"분당 중심 상권. AK플라자·서현역 일대"},
+/** `priority_place_100/commerce_hubs.json` — 100개 거점 (서울 53 / 경기 42 / 인천 5) */
+let DATA = [];
 
-  {tier:2,region:"서울",name:"사당역",lines:["2호선","4호선"],connectivity:4,vibe:["맛집","술집","카페"],psych:4,note:"2·4호선 + 과천선 직결. 서울 남부·경기 북부 교통요충"},
-  {tier:2,region:"서울",name:"신도림역",lines:["1호선","2호선"],connectivity:4,vibe:["쇼핑","맛집"],psych:4,note:"1·2호선 최대 환승역. 디큐브·테크노마트"},
-  {tier:2,region:"서울",name:"영등포역",lines:["1호선","경인선"],connectivity:3,vibe:["쇼핑","맛집","술집"],psych:3,note:"타임스퀘어·영등포 시장. 서울 서남부 거점"},
-  {tier:2,region:"서울",name:"왕십리역",lines:["2호선","5호선","경의중앙선","수인분당선"],connectivity:5,vibe:["맛집","술집","카페"],psych:4,note:"4개 노선 환승. 성동구 핵심"},
-  {tier:2,region:"서울",name:"고속터미널역",lines:["3호선","7호선","9호선"],connectivity:5,vibe:["쇼핑","맛집","카페"],psych:4,note:"3·7·9호선 + 센트럴시티·반포"},
-  {tier:2,region:"서울",name:"합정역",lines:["2호선","6호선"],connectivity:3,vibe:["카페","맛집","술집"],psych:4,note:"합정·망원 카페거리. 홍대 오버플로우 상권"},
-  {tier:2,region:"서울",name:"성수역",lines:["2호선"],connectivity:2,vibe:["카페","맛집","팝업"],psych:4,note:"힙스터 성지. SNS 기반 심리적 중심성 급상승"},
-  {tier:2,region:"서울",name:"을지로입구역",lines:["2호선"],connectivity:2,vibe:["맛집","술집","카페"],psych:3,note:"힙한 노포 골목문화. 직장인+MZ세대 공존"},
-  {tier:2,region:"경기",name:"범계역",lines:["4호선"],connectivity:2,vibe:["맛집","술집","쇼핑"],psych:4,note:"안양 최대 상권. 4호선 직통으로 서울 접근 우수"},
-  {tier:2,region:"경기",name:"인덕원역",lines:["4호선"],connectivity:2,vibe:["맛집","카페"],psych:3,note:"안양·의왕·과천 삼각 교통요충"},
-  {tier:2,region:"경기",name:"부평역",lines:["1호선","7호선"],connectivity:3,vibe:["쇼핑","맛집","술집"],psych:4,note:"인천·부천 최대 상권. 지하상가 규모 전국급"},
-  {tier:2,region:"경기",name:"정발산역",lines:["3호선"],connectivity:2,vibe:["맛집","카페","쇼핑"],psych:4,note:"일산 라페스타·웨스턴돔 인접"},
-  {tier:2,region:"경기",name:"구리역",lines:["경의중앙선"],connectivity:2,vibe:["맛집","술집"],psych:3,note:"서울 동북부·경기 동부 연결 거점"},
-
-  {tier:3,region:"서울",name:"노원역",lines:["4호선","7호선"],connectivity:3,vibe:["맛집","쇼핑","술집"],psych:3,note:"노도강 최대 상권. 중계·상계 수렴"},
-  {tier:3,region:"서울",name:"수유역",lines:["4호선"],connectivity:2,vibe:["맛집","술집"],psych:3,note:"강북구 중심. 북한산 인접 외식 수요"},
-  {tier:3,region:"서울",name:"천호역",lines:["5호선","8호선"],connectivity:3,vibe:["쇼핑","맛집","술집"],psych:3,note:"5·8호선 환승. 강동구 전통 상권"},
-  {tier:3,region:"서울",name:"목동역",lines:["5호선"],connectivity:2,vibe:["맛집","카페","학원"],psych:3,note:"양천·강서 교육+상권 복합"},
-  {tier:3,region:"서울",name:"서울대입구역",lines:["2호선"],connectivity:2,vibe:["맛집","카페","술집"],psych:3,note:"관악구 대학가 상권. 샤로수길"},
-  {tier:3,region:"서울",name:"불광역",lines:["3호선","6호선"],connectivity:3,vibe:["맛집","술집"],psych:3,note:"은평·서대문 서북부 거점"},
-  {tier:3,region:"경기",name:"상동역",lines:["7호선"],connectivity:2,vibe:["쇼핑","맛집","카페"],psych:3,note:"부천 동부 중심. 까르푸·상동호수공원"},
-  {tier:3,region:"경기",name:"철산역",lines:["7호선"],connectivity:2,vibe:["맛집","술집","카페"],psych:3,note:"광명·안양 접근성. 7호선 경기 서남부"},
-  {tier:3,region:"경기",name:"야탑역",lines:["수인분당선"],connectivity:2,vibe:["맛집","쇼핑","술집"],psych:3,note:"성남 동부 상권. AK플라자 야탑"},
-  {tier:3,region:"경기",name:"금정역",lines:["1호선","4호선"],connectivity:3,vibe:["맛집","술집"],psych:3,note:"1·4호선 환승. 군포·의왕·안양 연결"},
-];
+async function loadHubs() {
+  const url = "priority_place_100/commerce_hubs.json";
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(res.status + " " + res.statusText);
+    const raw = await res.json();
+    DATA = raw.map(function (d) {
+      return {
+        tier: d.tier,
+        region: d.region,
+        name: d.name,
+        lines: d.lines,
+        connectivity: d.connectivity,
+        psych: d.psychological,
+        vibe: d.vibes,
+        note: d.note
+      };
+    });
+  } catch (e) {
+    var msg = e && e.message ? e.message : String(e);
+    document.getElementById("list").innerHTML =
+      '<div class="empty">데이터를 불러오지 못했습니다. 같은 호스트에서 열었는지 확인하세요. (' + msg + ")</div>";
+    return;
+  }
+  render();
+}
 
 const COLORS = {1:"s-t1",2:"s-t2",3:"s-t3"};
 const BADGE = {1:"t1-badge",2:"t2-badge",3:"t3-badge"};
@@ -175,5 +168,5 @@ function render(){
 document.getElementById('tierFilter').onchange=render;
 document.getElementById('regionFilter').onchange=render;
 document.getElementById('search').oninput=render;
-render();
+loadHubs();
 </script>

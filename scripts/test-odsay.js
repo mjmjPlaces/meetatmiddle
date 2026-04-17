@@ -8,6 +8,12 @@ function mustEnv(name) {
 }
 
 const apiKey = mustEnv("ODSAY_API_KEY");
+/** ODsay WEB 키와 동일한 Origin — .env의 ODSAY_WEB_ORIGIN 우선, 없으면 프로덕션 Vercel URL */
+function odsayWebOriginHeaders() {
+  const raw = process.env.ODSAY_WEB_ORIGIN?.trim().replace(/^["']|["']$/g, "") ?? "";
+  const origin = (raw || "https://midpoint-navigator.vercel.app").replace(/\/$/, "");
+  return { Origin: origin, Referer: `${origin}/` };
+}
 const sx = process.argv[2] ?? "126.950783269518";
 const sy = process.argv[3] ?? "37.3897837540429";
 const ex = process.argv[4] ?? "126.941686527151";
@@ -25,11 +31,12 @@ console.log("[test-odsay] env", { apiKeyLength: apiKey.length });
 console.log("[test-odsay] url", url);
 
 try {
+  const wh = odsayWebOriginHeaders();
   const res = await fetch(url, {
     method: "GET",
     headers: {
-      Referer: "http://localhost:4000/",
-      Origin: "http://localhost:4000"
+      Referer: wh.Referer,
+      Origin: wh.Origin
     }
   });
   const text = await res.text();

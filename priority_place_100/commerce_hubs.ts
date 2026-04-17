@@ -1,0 +1,1088 @@
+/**
+ * 수도권 상권 거점 데이터 — 약속장소 중간지점 선정용 Pre-data
+ *
+ * ──────────────────────────────────────────────────────────────
+ * 데이터 출처 (Data Sources)
+ * ──────────────────────────────────────────────────────────────
+ * [S1] 서울교통공사 승하차순위 (2024년 12월 기준)
+ *      https://www.data.go.kr/data/15044250/fileData.do
+ *      → 일평균 승하차 인원 기반 역별 순위
+ *
+ * [S2] 서울교통공사 시간대별 승하차인원 (2023년 12월 기준)
+ *      https://www.data.go.kr/data/15048032/fileData.do
+ *      → 18~22시 저녁시간대 하차 인원 패턴 도출
+ *
+ * [S3] 소상공인시장진흥공단 상권정보시스템
+ *      https://sg.sbiz.or.kr / https://www.data.go.kr/data/15029180/standard.do
+ *      → 상권등급(S/A/B), 업종 밀집도(음식점·카페·주점 수)
+ *
+ * [S4] 서울시 상권분석 서비스 (골목상권 현황)
+ *      https://golmok.seoul.go.kr
+ *      → 행정동별 유동인구·점포수·매출 순위
+ *
+ * [S5] 통계지리정보서비스 생활업종 통계지도 (2023년 기준 사업체조사)
+ *      https://sgis.kostat.go.kr/view/bizStats/bizStatsMap
+ *      → 행정동 단위 음식점·카페·주점 사업체 수
+ *
+ * [S6] 나무위키 서울특별시/상권, 경기도/상권 (2026년 3월 기준)
+ *      https://namu.wiki/w/서울특별시/상권
+ *      https://namu.wiki/w/경기도/상권
+ *      → 상권 성격·Vibe·심리적 중심성 참고
+ *
+ * [S7] 커뮤니티/SNS 키워드 빈도 (네이버 데이터랩, 카카오맵 리뷰 집계 추정)
+ *      → "역명+맛집", "역명+약속", "역명+회식" 검색량 기반 심리중심성 보정
+ *
+ * ──────────────────────────────────────────────────────────────
+ * 스코어 정의
+ * ──────────────────────────────────────────────────────────────
+ * connectivity   : 환승 가능 노선 수 기반 (1~5)
+ *                  1=단일노선, 2=2노선, 3=3노선, 4=4노선, 5=5노선 이상
+ * psychological  : "여기서 만나자"고 했을 때 상대방 납득도 (1~5)
+ *                  SNS 검색량·커뮤니티 언급 빈도·인지도 반영
+ * vibeScore      : 업종 다양성 (맛집/카페/술집/쇼핑 등 카테고리 수, 1~5)
+ * eveningTraffic : 저녁(18~22시) 하차인원 상대적 순위 [S1][S2] 기반
+ *                  "very_high" > "high" > "medium" > "low"
+ * commerceGrade  : 소상공인진흥공단 상권등급 추정 [S3]
+ *                  "S" = 최우수, "A" = 우수, "B" = 양호
+ */
+
+export type EveningTraffic = "very_high" | "high" | "medium" | "low";
+export type CommerceGrade = "S" | "A" | "B";
+export type Tier = 1 | 2 | 3;
+export type Region = "서울" | "경기" | "인천";
+
+export interface CommerceHub {
+  id: string;               // 고유 식별자 (snake_case)
+  tier: Tier;               // 1=초거대허브 / 2=광역거점 / 3=지역거점
+  name: string;             // 역명 (지하철 기준)
+  region: Region;
+  district: string;         // 구/시 단위
+  lines: string[];          // 환승 노선 목록
+  connectivity: number;     // 1~5
+  psychological: number;    // 1~5
+  vibeScore: number;        // 1~5
+  vibes: string[];          // 상권 성격 태그
+  eveningTraffic: EveningTraffic; // 저녁시간대 하차인원 등급
+  commerceGrade: CommerceGrade;   // 소상공인진흥공단 상권등급 추정
+  lat: number;              // 위도
+  lng: number;              // 경도
+  note: string;             // 선정 근거 요약
+}
+
+export const COMMERCE_HUBS: CommerceHub[] = [
+  // ══════════════════════════════════════════════════════
+  // TIER 1 — 초거대 허브 (전국구, 10곳)
+  // ══════════════════════════════════════════════════════
+  {
+    id: "gangnam",
+    tier: 1, name: "강남역", region: "서울", district: "강남구",
+    lines: ["2호선", "신분당선"],
+    connectivity: 5, psychological: 5, vibeScore: 5,
+    vibes: ["맛집", "카페", "쇼핑", "술집", "클럽"],
+    eveningTraffic: "very_high", commerceGrade: "S",
+    lat: 37.4979, lng: 127.0276,
+    note: "수도권 최고 심리적 중심지. 일평균 승하차 Top5 [S1]. 강남대로·먹자골목·클럽거리 집적 [S3]"
+  },
+  {
+    id: "hongdae",
+    tier: 1, name: "홍대입구역", region: "서울", district: "마포구",
+    lines: ["2호선", "공항철도", "경의중앙선"],
+    connectivity: 5, psychological: 5, vibeScore: 5,
+    vibes: ["술집", "카페", "클럽", "맛집", "공연"],
+    eveningTraffic: "very_high", commerceGrade: "S",
+    lat: 37.5573, lng: 126.9240,
+    note: "2024년 일평균 승하차 2위 [S1]. 20-30대 야간 유동인구 압도적. 공항철도로 외국인 유입"
+  },
+  {
+    id: "jamsil",
+    tier: 1, name: "잠실역", region: "서울", district: "송파구",
+    lines: ["2호선", "8호선"],
+    connectivity: 4, psychological: 5, vibeScore: 5,
+    vibes: ["쇼핑", "맛집", "엔터테인먼트", "카페"],
+    eveningTraffic: "very_high", commerceGrade: "S",
+    lat: 37.5133, lng: 127.1001,
+    note: "2024년 전국 지하철 승하차 1위 [S1]. 롯데월드몰·스타필드 코엑스 인접. 강동·경기 남동부 수렴"
+  },
+  {
+    id: "seoul_station",
+    tier: 1, name: "서울역", region: "서울", district: "중구",
+    lines: ["1호선", "4호선", "경의중앙선", "공항철도"],
+    connectivity: 5, psychological: 4, vibeScore: 4,
+    vibes: ["맛집", "쇼핑", "업무"],
+    eveningTraffic: "very_high", commerceGrade: "S",
+    lat: 37.5547, lng: 126.9706,
+    note: "2024년 일평균 승하차 3위 [S1]. KTX·광역버스 허브. 지방→서울 약속의 기본값"
+  },
+  {
+    id: "suwon",
+    tier: 1, name: "수원역", region: "경기", district: "수원시",
+    lines: ["1호선", "수인분당선"],
+    connectivity: 4, psychological: 5, vibeScore: 5,
+    vibes: ["맛집", "쇼핑", "술집", "카페"],
+    eveningTraffic: "very_high", commerceGrade: "S",
+    lat: 37.2665, lng: 127.0007,
+    note: "전국 지하철 승하차 18위 내 [S1]. 경기 남부 최대 상권. 화성·용인·오산·평택 수렴 [S6]"
+  },
+  {
+    id: "pangyo",
+    tier: 1, name: "판교역", region: "경기", district: "성남시",
+    lines: ["신분당선", "경강선"],
+    connectivity: 3, psychological: 4, vibeScore: 4,
+    vibes: ["카페", "맛집", "쇼핑", "업무"],
+    eveningTraffic: "high", commerceGrade: "S",
+    lat: 37.3948, lng: 127.1113,
+    note: "IT클러스터·알파돔시티. 현대백화점 판교점(수도권 최대 규모) [S6]. 직장인 저녁 모임 Top3"
+  },
+  {
+    id: "yongsan",
+    tier: 1, name: "용산역", region: "서울", district: "용산구",
+    lines: ["1호선", "경의중앙선"],
+    connectivity: 4, psychological: 4, vibeScore: 4,
+    vibes: ["쇼핑", "맛집", "카페", "업무"],
+    eveningTraffic: "high", commerceGrade: "S",
+    lat: 37.5298, lng: 126.9647,
+    note: "아이파크몰·KTX환승. 서울 서부권 허브. 드래곤시티·나진전자상가 인접"
+  },
+  {
+    id: "myeongdong",
+    tier: 1, name: "명동역", region: "서울", district: "중구",
+    lines: ["4호선"],
+    connectivity: 3, psychological: 4, vibeScore: 4,
+    vibes: ["쇼핑", "카페", "맛집", "관광"],
+    eveningTraffic: "high", commerceGrade: "S",
+    lat: 37.5636, lng: 126.9826,
+    note: "전국구 인지도. 외국인 관광객 포함 상권 밀도 최상위 [S3]. 롯데백화점·신세계백화점 인접"
+  },
+  {
+    id: "seohyeon",
+    tier: 1, name: "서현역", region: "경기", district: "성남시",
+    lines: ["수인분당선"],
+    connectivity: 2, psychological: 4, vibeScore: 4,
+    vibes: ["맛집", "카페", "쇼핑"],
+    eveningTraffic: "high", commerceGrade: "S",
+    lat: 37.3838, lng: 127.1238,
+    note: "분당 중심 상권. AK플라자·서현역 먹자골목 집적 [S3][S6]. 판교와 함께 분당선 핵심 2대 거점"
+  },
+  {
+    id: "konkuk",
+    tier: 1, name: "건대입구역", region: "서울", district: "광진구",
+    lines: ["2호선", "7호선"],
+    connectivity: 4, psychological: 4, vibeScore: 5,
+    vibes: ["맛집", "술집", "카페", "쇼핑"],
+    eveningTraffic: "very_high", commerceGrade: "S",
+    lat: 37.5402, lng: 127.0699,
+    note: "2·7호선 환승. 강북 동부권 핵심 상권. 커먼그라운드·건대맛집거리 집적 [S3]"
+  },
+
+  // ══════════════════════════════════════════════════════
+  // TIER 2 — 광역 거점 (교통 요충 + 대형 상권, 35곳)
+  // ══════════════════════════════════════════════════════
+  {
+    id: "sadang",
+    tier: 2, name: "사당역", region: "서울", district: "동작구",
+    lines: ["2호선", "4호선"],
+    connectivity: 4, psychological: 4, vibeScore: 4,
+    vibes: ["맛집", "술집", "카페"],
+    eveningTraffic: "very_high", commerceGrade: "A",
+    lat: 37.4766, lng: 126.9815,
+    note: "2·4호선+과천선 직결. 서울 남부·경기 북부 교통요충. 2024년 승하차 7위 [S1]"
+  },
+  {
+    id: "sindorim",
+    tier: 2, name: "신도림역", region: "서울", district: "구로구",
+    lines: ["1호선", "2호선"],
+    connectivity: 4, psychological: 4, vibeScore: 3,
+    vibes: ["쇼핑", "맛집"],
+    eveningTraffic: "very_high", commerceGrade: "A",
+    lat: 37.5089, lng: 126.8916,
+    note: "1·2호선 최대 환승역. 2024년 승하차 8위(전년比 +6칸) [S1]. 디큐브시티·테크노마트"
+  },
+  {
+    id: "wangsimni",
+    tier: 2, name: "왕십리역", region: "서울", district: "성동구",
+    lines: ["2호선", "5호선", "경의중앙선", "수인분당선"],
+    connectivity: 5, psychological: 4, vibeScore: 4,
+    vibes: ["맛집", "술집", "카페"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5614, lng: 127.0375,
+    note: "4개 노선 환승. 행당상권·비트플렉스·이마트 성동 집적 [S3]"
+  },
+  {
+    id: "gosok_terminal",
+    tier: 2, name: "고속터미널역", region: "서울", district: "서초구",
+    lines: ["3호선", "7호선", "9호선"],
+    connectivity: 5, psychological: 4, vibeScore: 4,
+    vibes: ["쇼핑", "맛집", "카페"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5047, lng: 127.0050,
+    note: "3·7·9호선 환승. 센트럴시티·신세계백화점 강남점·반포한강공원 인접 [S3]"
+  },
+  {
+    id: "hapjeong",
+    tier: 2, name: "합정역", region: "서울", district: "마포구",
+    lines: ["2호선", "6호선"],
+    connectivity: 3, psychological: 4, vibeScore: 4,
+    vibes: ["카페", "맛집", "술집"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5496, lng: 126.9137,
+    note: "홍대 오버플로우 상권. 합정·망원·상수 카페거리 집적 [S4]. 2호선+6호선"
+  },
+  {
+    id: "seongsu",
+    tier: 2, name: "성수역", region: "서울", district: "성동구",
+    lines: ["2호선"],
+    connectivity: 2, psychological: 4, vibeScore: 4,
+    vibes: ["카페", "맛집", "팝업", "쇼핑"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5447, lng: 127.0557,
+    note: "2024년 전체 13위, 7년만에 승차 57%↑ [S1]. SNS 기반 심리적 중심성 급상승"
+  },
+  {
+    id: "euljiro_ipgu",
+    tier: 2, name: "을지로입구역", region: "서울", district: "중구",
+    lines: ["2호선"],
+    connectivity: 2, psychological: 3, vibeScore: 4,
+    vibes: ["맛집", "술집", "카페"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5659, lng: 126.9826,
+    note: "힙한 노포 골목문화(을지로3가·4가). 직장인+MZ세대 공존. 저녁 유동인구 밀도 상위 [S4]"
+  },
+  {
+    id: "yeongdeungpo",
+    tier: 2, name: "영등포역", region: "서울", district: "영등포구",
+    lines: ["1호선", "경인선"],
+    connectivity: 3, psychological: 3, vibeScore: 4,
+    vibes: ["쇼핑", "맛집", "술집"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5157, lng: 126.9072,
+    note: "타임스퀘어·CGV·영등포 시장. 서울 서남부 거점 [S6]"
+  },
+  {
+    id: "sinchon",
+    tier: 2, name: "신촌역", region: "서울", district: "서대문구",
+    lines: ["2호선"],
+    connectivity: 2, psychological: 4, vibeScore: 4,
+    vibes: ["술집", "맛집", "카페", "쇼핑"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5553, lng: 126.9366,
+    note: "연세대·이화여대 대학가. 연트럴파크·현대백화점 유플렉스. 저녁 유흥 밀도 상위 [S3]"
+  },
+  {
+    id: "itaewon",
+    tier: 2, name: "이태원역", region: "서울", district: "용산구",
+    lines: ["6호선"],
+    connectivity: 2, psychological: 4, vibeScore: 5,
+    vibes: ["술집", "클럽", "맛집", "카페", "쇼핑"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5345, lng: 126.9943,
+    note: "외국인 밀집 글로벌 상권. 경리단길·해방촌. 저녁~심야 Vibe 다양성 최상위"
+  },
+  {
+    id: "samsung",
+    tier: 2, name: "삼성역", region: "서울", district: "강남구",
+    lines: ["2호선"],
+    connectivity: 2, psychological: 4, vibeScore: 4,
+    vibes: ["쇼핑", "맛집", "업무", "카페"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5088, lng: 127.0631,
+    note: "코엑스몰·현대백화점 무역센터. 2024년 승하차 6위(선릉) 인접 [S1]"
+  },
+  {
+    id: "nowon",
+    tier: 2, name: "노원역", region: "서울", district: "노원구",
+    lines: ["4호선", "7호선"],
+    connectivity: 3, psychological: 3, vibeScore: 4,
+    vibes: ["맛집", "쇼핑", "술집"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.6549, lng: 127.0566,
+    note: "노도강 최대 상권. 4·7호선 환승. 2024년 승차 인원 37%↑ [S1]. 롯데백화점 노원점"
+  },
+  {
+    id: "cheonho",
+    tier: 2, name: "천호역", region: "서울", district: "강동구",
+    lines: ["5호선", "8호선"],
+    connectivity: 3, psychological: 3, vibeScore: 4,
+    vibes: ["쇼핑", "맛집", "술집"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5387, lng: 127.1238,
+    note: "5·8호선 환승. 이마트·롯데백화점 천호점. 강동구 전통 상권 [S6]"
+  },
+  {
+    id: "beomgye",
+    tier: 2, name: "범계역", region: "경기", district: "안양시",
+    lines: ["4호선"],
+    connectivity: 2, psychological: 4, vibeScore: 4,
+    vibes: ["맛집", "술집", "쇼핑", "카페"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.3902, lng: 126.9522,
+    note: "안양 최대 상권. 4호선 직통 서울 접근 우수. 평촌·안양 수렴 [S3][S6]"
+  },
+  {
+    id: "indeogwon",
+    tier: 2, name: "인덕원역", region: "경기", district: "안양시",
+    lines: ["4호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.3956, lng: 126.9726,
+    note: "안양·의왕·과천 삼각 교통요충. 수도권 광역환승 전략 거점"
+  },
+  {
+    id: "bupyeong",
+    tier: 2, name: "부평역", region: "인천", district: "부평구",
+    lines: ["1호선", "7호선"],
+    connectivity: 3, psychological: 4, vibeScore: 4,
+    vibes: ["쇼핑", "맛집", "술집"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.4897, lng: 126.7228,
+    note: "인천·부천 최대 상권. 지하상가 규모 전국급. 1·7호선 환승 [S6]"
+  },
+  {
+    id: "ilsan_jeongbalsan",
+    tier: 2, name: "정발산역", region: "경기", district: "고양시",
+    lines: ["3호선"],
+    connectivity: 2, psychological: 4, vibeScore: 4,
+    vibes: ["맛집", "카페", "쇼핑"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.6619, lng: 126.7718,
+    note: "일산 라페스타·웨스턴돔 인접. 고양시 최대 집적 상권 [S6]"
+  },
+  {
+    id: "guri",
+    tier: 2, name: "구리역", region: "경기", district: "구리시",
+    lines: ["경의중앙선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "술집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.5963, lng: 127.1399,
+    note: "서울 동북부·경기 동부 연결 거점. 남양주 방면 수렴"
+  },
+  {
+    id: "geumjeong",
+    tier: 2, name: "금정역", region: "경기", district: "군포시",
+    lines: ["1호선", "4호선"],
+    connectivity: 3, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "술집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.3600, lng: 126.9332,
+    note: "1·4호선 환승. 군포·의왕·안양 연결. 수원 북부 수렴"
+  },
+  {
+    id: "gaebong_guro",
+    tier: 2, name: "구로디지털단지역", region: "서울", district: "구로구",
+    lines: ["2호선"],
+    connectivity: 2, psychological: 3, vibeScore: 4,
+    vibes: ["맛집", "술집", "카페"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.4853, lng: 126.9012,
+    note: "IT·제조업 직장인 밀집. 퇴근 후 저녁 유동인구 상위권 [S1][S4]. 가산디지털단지 인접"
+  },
+  {
+    id: "gangbyeon",
+    tier: 2, name: "강변역", region: "서울", district: "광진구",
+    lines: ["2호선"],
+    connectivity: 2, psychological: 3, vibeScore: 4,
+    vibes: ["맛집", "카페", "쇼핑"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5341, lng: 127.0942,
+    note: "이마트 강변·테크노마트·CGV 강변. 한강 접근성 우수"
+  },
+  {
+    id: "yeoksam",
+    tier: 2, name: "역삼역", region: "서울", district: "강남구",
+    lines: ["2호선"],
+    connectivity: 2, psychological: 4, vibeScore: 4,
+    vibes: ["맛집", "카페", "술집", "업무"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5005, lng: 127.0361,
+    note: "강남 테헤란로 직장인 밀집. 저녁 회식·약속 빈도 높음 [S7]"
+  },
+  {
+    id: "seouldaegirl",
+    tier: 2, name: "서울대입구역", region: "서울", district: "관악구",
+    lines: ["2호선"],
+    connectivity: 2, psychological: 3, vibeScore: 4,
+    vibes: ["맛집", "카페", "술집"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.4813, lng: 126.9527,
+    note: "관악구 최대 상권. 샤로수길·봉천동 먹자골목. 대학가 저녁 유동 강함 [S4]"
+  },
+  {
+    id: "dongdaemun",
+    tier: 2, name: "동대문역사문화공원역", region: "서울", district: "중구",
+    lines: ["2호선", "4호선", "5호선"],
+    connectivity: 4, psychological: 3, vibeScore: 4,
+    vibes: ["쇼핑", "맛집"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5658, lng: 127.0099,
+    note: "2·4·5호선 환승. DDP·두타·밀리오레. 심야 패션·도매 상권"
+  },
+  {
+    id: "cheongnyangni",
+    tier: 2, name: "청량리역", region: "서울", district: "동대문구",
+    lines: ["1호선", "경의중앙선", "수인분당선", "경춘선"],
+    connectivity: 5, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "쇼핑"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5797, lng: 127.0472,
+    note: "광역철도 5개 노선 집결. 롯데백화점·롯데마트 청량리. 강원·경기 북동부 수렴"
+  },
+  {
+    id: "bucheon",
+    tier: 2, name: "부천역", region: "경기", district: "부천시",
+    lines: ["1호선"],
+    connectivity: 2, psychological: 3, vibeScore: 4,
+    vibes: ["맛집", "술집", "쇼핑"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5038, lng: 126.7828,
+    note: "부천 중심 상권. CGV·롯데백화점 중동. 부천 서부 수렴"
+  },
+  {
+    id: "ansan",
+    tier: 2, name: "안산역", region: "경기", district: "안산시",
+    lines: ["4호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "술집", "쇼핑"],
+    eveningTraffic: "medium", commerceGrade: "A",
+    lat: 37.3201, lng: 126.8311,
+    note: "안산 중심 상권. 중앙역 인근 대형 먹자골목 집적 [S3]"
+  },
+  {
+    id: "ansan_jungang",
+    tier: 2, name: "중앙역(안산)", region: "경기", district: "안산시",
+    lines: ["4호선"],
+    connectivity: 2, psychological: 3, vibeScore: 4,
+    vibes: ["맛집", "카페", "술집"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.3129, lng: 126.8492,
+    note: "안산 최대 상권 밀집. 로데오거리·이마트 안산. 시흥·화성 수렴"
+  },
+  {
+    id: "uijeongbu",
+    tier: 2, name: "의정부역", region: "경기", district: "의정부시",
+    lines: ["1호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "쇼핑", "술집"],
+    eveningTraffic: "medium", commerceGrade: "A",
+    lat: 37.7381, lng: 127.0439,
+    note: "경기 북부 최대 상권. 롯데백화점 의정부점. 포천·동두천 수렴"
+  },
+  {
+    id: "paju_geumchon",
+    tier: 2, name: "금촌역", region: "경기", district: "파주시",
+    lines: ["경의중앙선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "술집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.7007, lng: 126.7814,
+    note: "파주 최대 상권. 금촌2지구 상업지구 집적 [S6]"
+  },
+  {
+    id: "hanam_misari",
+    tier: 2, name: "미사역", region: "경기", district: "하남시",
+    lines: ["5호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "카페", "쇼핑"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.5614, lng: 127.2002,
+    note: "미사강변도시 신흥 상권. 스타필드 하남 인접. 하남·광주 수렴"
+  },
+  {
+    id: "starium_hanam",
+    tier: 2, name: "풍산역(하남)", region: "경기", district: "하남시",
+    lines: ["5호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["쇼핑", "맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.5437, lng: 127.2001,
+    note: "스타필드 하남 최근접역. 대형 복합쇼핑몰 상권"
+  },
+  {
+    id: "giheung",
+    tier: 2, name: "기흥역", region: "경기", district: "용인시",
+    lines: ["수인분당선", "에버라인"],
+    connectivity: 3, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "카페", "쇼핑"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.2754, lng: 127.1147,
+    note: "수인분당선+에버라인 환승. 용인 동부·수지 수렴. 기흥역세권 상권 성장 중"
+  },
+  {
+    id: "dongtan",
+    tier: 2, name: "동탄역", region: "경기", district: "화성시",
+    lines: ["SRT", "수도권전철"],
+    connectivity: 3, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "카페", "쇼핑"],
+    eveningTraffic: "medium", commerceGrade: "A",
+    lat: 37.2002, lng: 127.0757,
+    note: "동탄2신도시 핵심 상권. SRT 직결. 화성·오산·평택 수렴"
+  },
+  {
+    id: "incheon_dongam",
+    tier: 2, name: "동암역", region: "인천", district: "부평구",
+    lines: ["1호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "술집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.5029, lng: 126.7409,
+    note: "부평 남부 거점. 1호선 인천 방면 수렴"
+  },
+  {
+    id: "incheon_central",
+    tier: 2, name: "인천시청역", region: "인천", district: "남동구",
+    lines: ["수인분당선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "카페", "쇼핑"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.4555, lng: 126.7059,
+    note: "인천 남동구 행정·상권 중심. 롯데백화점 인천터미널점 인접"
+  },
+
+  // ══════════════════════════════════════════════════════
+  // TIER 3 — 지역 거점 (역세권 상권 발달, 55곳)
+  // ══════════════════════════════════════════════════════
+  {
+    id: "suyu",
+    tier: 3, name: "수유역", region: "서울", district: "강북구",
+    lines: ["4호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "술집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.6385, lng: 127.0255,
+    note: "강북구 중심. 수유리 먹자골목. 북한산 등산객 수요"
+  },
+  {
+    id: "mokdong",
+    tier: 3, name: "목동역", region: "서울", district: "양천구",
+    lines: ["5호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "카페", "쇼핑"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.5280, lng: 126.8750,
+    note: "현대백화점·교보문고 목동. 양천 최대 상권. 주말 하객·가족 수요 [S6]"
+  },
+  {
+    id: "bulgwang",
+    tier: 3, name: "불광역", region: "서울", district: "은평구",
+    lines: ["3호선", "6호선"],
+    connectivity: 3, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "술집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.6100, lng: 126.9303,
+    note: "은평·서대문 서북부 거점. 롯데마트 불광점 인접"
+  },
+  {
+    id: "sangwolgok",
+    tier: 3, name: "상월곡역", region: "서울", district: "성북구",
+    lines: ["6호선"],
+    connectivity: 2, psychological: 2, vibeScore: 2,
+    vibes: ["맛집"],
+    eveningTraffic: "low", commerceGrade: "B",
+    lat: 37.6013, lng: 127.0581,
+    note: "성북구 북부 거점. 6호선 성북권 수렴"
+  },
+  {
+    id: "sanggye",
+    tier: 3, name: "상계역", region: "서울", district: "노원구",
+    lines: ["4호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.6691, lng: 127.0647,
+    note: "노원 북부 상권. 롯데마트 상계점 인접"
+  },
+  {
+    id: "dobong",
+    tier: 3, name: "도봉산역", region: "서울", district: "도봉구",
+    lines: ["1호선", "7호선"],
+    connectivity: 3, psychological: 2, vibeScore: 2,
+    vibes: ["맛집"],
+    eveningTraffic: "low", commerceGrade: "B",
+    lat: 37.6888, lng: 127.0474,
+    note: "도봉산 등산 기점. 주말 등산객 수요 특화"
+  },
+  {
+    id: "sindaebang",
+    tier: 3, name: "신대방역", region: "서울", district: "동작구",
+    lines: ["2호선"],
+    connectivity: 2, psychological: 2, vibeScore: 3,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.4874, lng: 126.9131,
+    note: "동작구 중부 거점. 신림·신대방 경계 상권"
+  },
+  {
+    id: "sinlim",
+    tier: 3, name: "신림역", region: "서울", district: "관악구",
+    lines: ["2호선"],
+    connectivity: 2, psychological: 3, vibeScore: 4,
+    vibes: ["맛집", "술집", "카페"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.4847, lng: 126.9293,
+    note: "관악구 최대 유동인구. 2024년 승하차 Top10 내 [S1]. 고시촌+청년층 상권"
+  },
+  {
+    id: "mangwon",
+    tier: 3, name: "망원역", region: "서울", district: "마포구",
+    lines: ["6호선"],
+    connectivity: 2, psychological: 3, vibeScore: 4,
+    vibes: ["카페", "맛집", "술집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.5555, lng: 126.9026,
+    note: "망원동 카페거리·망리단길. 합정 오버플로우. SNS 핫플 [S7]"
+  },
+  {
+    id: "yeouido",
+    tier: 3, name: "여의도역", region: "서울", district: "영등포구",
+    lines: ["5호선", "9호선"],
+    connectivity: 3, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "술집", "카페"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5218, lng: 126.9241,
+    note: "IFC몰·현대백화점 여의도. 직장인 퇴근 수요 강함. 한강공원 인접"
+  },
+  {
+    id: "banpo",
+    tier: 3, name: "반포역", region: "서울", district: "서초구",
+    lines: ["9호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "카페", "쇼핑"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.5046, lng: 126.9977,
+    note: "고속터미널 인접 주거상권. 아크로리버파크 인근 카페 집적"
+  },
+  {
+    id: "nonhyeon",
+    tier: 3, name: "논현역", region: "서울", district: "강남구",
+    lines: ["7호선"],
+    connectivity: 2, psychological: 3, vibeScore: 4,
+    vibes: ["맛집", "술집", "카페"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5110, lng: 127.0205,
+    note: "강남 서부 먹자골목. 학동사거리 주점·맛집 밀집 [S3]"
+  },
+  {
+    id: "apgujeong",
+    tier: 3, name: "압구정역", region: "서울", district: "강남구",
+    lines: ["3호선"],
+    connectivity: 2, psychological: 4, vibeScore: 4,
+    vibes: ["카페", "맛집", "쇼핑"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5270, lng: 127.0282,
+    note: "로데오거리·갤러리아백화점. 트렌디 카페 밀집. 심리적 고급 이미지"
+  },
+  {
+    id: "daechi",
+    tier: 3, name: "대치역", region: "서울", district: "강남구",
+    lines: ["3호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.4945, lng: 127.0613,
+    note: "대치동 학원가 인접 상권. 가족 모임·학부모 수요 [S6]"
+  },
+  {
+    id: "suseo",
+    tier: 3, name: "수서역", region: "서울", district: "강남구",
+    lines: ["3호선", "수인분당선", "SRT"],
+    connectivity: 4, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.4871, lng: 127.1012,
+    note: "SRT·분당선·3호선 환승. 강남 동부 광역 접근성 우수"
+  },
+  {
+    id: "garak",
+    tier: 3, name: "가락시장역", region: "서울", district: "송파구",
+    lines: ["3호선", "8호선"],
+    connectivity: 3, psychological: 2, vibeScore: 3,
+    vibes: ["맛집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.4941, lng: 127.1196,
+    note: "가락시장 인접. 신선 식재료·맛집 특화 상권"
+  },
+  {
+    id: "macheon",
+    tier: 3, name: "마천역", region: "서울", district: "송파구",
+    lines: ["5호선"],
+    connectivity: 2, psychological: 2, vibeScore: 2,
+    vibes: ["맛집"],
+    eveningTraffic: "low", commerceGrade: "B",
+    lat: 37.4980, lng: 127.1572,
+    note: "송파구 동부 거점. 5호선 종점 일대 주거상권"
+  },
+  {
+    id: "sangil",
+    tier: 3, name: "상일동역", region: "서울", district: "강동구",
+    lines: ["5호선"],
+    connectivity: 2, psychological: 2, vibeScore: 2,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "low", commerceGrade: "B",
+    lat: 37.5542, lng: 127.1788,
+    note: "강동구 동부 신흥 상권. 하남 경계 지역"
+  },
+  {
+    id: "dobong_changdong",
+    tier: 3, name: "창동역", region: "서울", district: "도봉구",
+    lines: ["1호선", "4호선"],
+    connectivity: 3, psychological: 2, vibeScore: 3,
+    vibes: ["쇼핑", "맛집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.6528, lng: 127.0478,
+    note: "1·4호선 환승. 롯데백화점 창동점 인접. 도봉·노원 경계 상권"
+  },
+  {
+    id: "junggye",
+    tier: 3, name: "중계역", region: "서울", district: "노원구",
+    lines: ["7호선"],
+    connectivity: 2, psychological: 2, vibeScore: 3,
+    vibes: ["맛집", "학원"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.6394, lng: 127.0773,
+    note: "중계동 학원가+먹자골목. 학부모·학생 수요 특화"
+  },
+  {
+    id: "eunpyeong",
+    tier: 3, name: "연신내역", region: "서울", district: "은평구",
+    lines: ["3호선", "6호선"],
+    connectivity: 3, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "쇼핑", "술집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.6192, lng: 126.9200,
+    note: "3·6호선 환승. 은평 최대 상권. 롯데마트·이마트 은평점"
+  },
+  {
+    id: "susaek",
+    tier: 3, name: "수색역", region: "서울", district: "은평구",
+    lines: ["경의중앙선"],
+    connectivity: 2, psychological: 2, vibeScore: 2,
+    vibes: ["맛집"],
+    eveningTraffic: "low", commerceGrade: "B",
+    lat: 37.5963, lng: 126.8880,
+    note: "수색·증산 재개발 인접. 향후 상권 성장 기대"
+  },
+  {
+    id: "mapo",
+    tier: 3, name: "공덕역", region: "서울", district: "마포구",
+    lines: ["5호선", "6호선", "경의중앙선", "공항철도"],
+    connectivity: 5, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "카페", "업무"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.5441, lng: 126.9514,
+    note: "4개 노선 환승. 마포구 업무+주거 복합. 공항철도 직결"
+  },
+  {
+    id: "nakseongdae",
+    tier: 3, name: "낙성대역", region: "서울", district: "관악구",
+    lines: ["2호선"],
+    connectivity: 2, psychological: 2, vibeScore: 3,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.4763, lng: 126.9638,
+    note: "서울대 배후 상권. 캠퍼스타운 상권 성장 중"
+  },
+  {
+    id: "dongjak",
+    tier: 3, name: "이수역", region: "서울", district: "동작구",
+    lines: ["4호선", "7호선"],
+    connectivity: 3, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "카페", "술집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.4869, lng: 126.9823,
+    note: "4·7호선 환승. 동작구 남부 상권. 총신대입구 인접"
+  },
+  {
+    id: "yatap",
+    tier: 3, name: "야탑역", region: "경기", district: "성남시",
+    lines: ["수인분당선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "쇼핑", "술집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.4117, lng: 127.1275,
+    note: "성남 동부 상권. AK플라자 야탑. 분당 북부 거점 [S6]"
+  },
+  {
+    id: "sangdong",
+    tier: 3, name: "상동역", region: "경기", district: "부천시",
+    lines: ["7호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["쇼핑", "맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.5030, lng: 126.7680,
+    note: "부천 동부 중심. CGV·홈플러스 상동. 7호선 경기 서남부 [S6]"
+  },
+  {
+    id: "cheolsan",
+    tier: 3, name: "철산역", region: "경기", district: "광명시",
+    lines: ["7호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "술집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.4786, lng: 126.8627,
+    note: "광명·안양 접근성. 7호선 경기 서남부 [S6]. 철산상업지구"
+  },
+  {
+    id: "gwangmyeong",
+    tier: 3, name: "광명사거리역", region: "경기", district: "광명시",
+    lines: ["7호선"],
+    connectivity: 2, psychological: 2, vibeScore: 3,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.4763, lng: 126.8660,
+    note: "광명시 중심 상권. 코스트코·이케아 광명 인접"
+  },
+  {
+    id: "songdo",
+    tier: 3, name: "인천대입구역", region: "인천", district: "연수구",
+    lines: ["수인분당선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "카페", "쇼핑"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.3895, lng: 126.6453,
+    note: "송도국제도시 중심 상권. 트리플스트리트·현대프리미엄아울렛 인접"
+  },
+  {
+    id: "incheon_guwol",
+    tier: 3, name: "구월동(예술회관역)", region: "인천", district: "남동구",
+    lines: ["인천1호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "술집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.4489, lng: 126.7053,
+    note: "인천 남동구 구월동 상권. 신포·부평 외 인천 3대 상권"
+  },
+  {
+    id: "gapyeong",
+    tier: 3, name: "가평역", region: "경기", district: "가평군",
+    lines: ["경춘선"],
+    connectivity: 2, psychological: 2, vibeScore: 2,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "low", commerceGrade: "B",
+    lat: 37.8313, lng: 127.5124,
+    note: "경춘선 여행·레저 거점. 주말 당일치기 약속 특화"
+  },
+  {
+    id: "yeongong_namyangju",
+    tier: 3, name: "별내역", region: "경기", district: "남양주시",
+    lines: ["8호선"],
+    connectivity: 2, psychological: 2, vibeScore: 3,
+    vibes: ["맛집", "카페", "쇼핑"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.6472, lng: 127.1372,
+    note: "8호선 별내선(2024년 개통). 남양주 서부 신흥 상권"
+  },
+  {
+    id: "goseong_suwon",
+    tier: 3, name: "매탄권선역", region: "경기", district: "수원시",
+    lines: ["수인분당선"],
+    connectivity: 2, psychological: 2, vibeScore: 2,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "low", commerceGrade: "B",
+    lat: 37.2618, lng: 127.0409,
+    note: "수원 동부 권선구 상권. 수원역 위성 거점"
+  },
+  {
+    id: "osan",
+    tier: 3, name: "오산역", region: "경기", district: "오산시",
+    lines: ["1호선"],
+    connectivity: 2, psychological: 2, vibeScore: 3,
+    vibes: ["맛집", "술집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.1497, lng: 127.0764,
+    note: "오산 최대 상권. 1호선 수원 남부 위성 거점"
+  },
+  {
+    id: "pyeongtaek",
+    tier: 3, name: "평택역", region: "경기", district: "평택시",
+    lines: ["1호선"],
+    connectivity: 2, psychological: 2, vibeScore: 3,
+    vibes: ["맛집", "쇼핑", "술집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 36.9928, lng: 127.0928,
+    note: "경기 남부 끝단 상권. 삼성반도체·주한미군 수요 특화"
+  },
+  {
+    id: "namyangju_dasan",
+    tier: 3, name: "다산역", region: "경기", district: "남양주시",
+    lines: ["경의중앙선"],
+    connectivity: 2, psychological: 2, vibeScore: 2,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "low", commerceGrade: "B",
+    lat: 37.6197, lng: 127.1878,
+    note: "다산신도시 신흥 상권. 남양주 서부 수렴"
+  },
+  {
+    id: "goyang_samsung",
+    tier: 3, name: "삼송역", region: "경기", district: "고양시",
+    lines: ["3호선"],
+    connectivity: 2, psychological: 2, vibeScore: 3,
+    vibes: ["쇼핑", "맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.6608, lng: 126.8979,
+    note: "스타필드 고양 최근접역. 대형 복합쇼핑몰 상권"
+  },
+  {
+    id: "goyang_baekseok",
+    tier: 3, name: "백석역", region: "경기", district: "고양시",
+    lines: ["3호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "술집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.6491, lng: 126.7831,
+    note: "일산 백석동 상권. 화정·백마 방면 수렴 [S6]"
+  },
+  {
+    id: "hwajung",
+    tier: 3, name: "화정역", region: "경기", district: "고양시",
+    lines: ["3호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "술집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.6340, lng: 126.8308,
+    note: "화정 로데오거리. 고양 서부 상권 [S6]"
+  },
+  {
+    id: "siheung",
+    tier: 3, name: "시흥시청역", region: "경기", district: "시흥시",
+    lines: ["수인분당선"],
+    connectivity: 2, psychological: 2, vibeScore: 2,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "low", commerceGrade: "B",
+    lat: 37.3800, lng: 126.8029,
+    note: "시흥 중심 상권. 수인분당선 시흥 구간 거점"
+  },
+  {
+    id: "gunpo",
+    tier: 3, name: "군포역", region: "경기", district: "군포시",
+    lines: ["1호선"],
+    connectivity: 2, psychological: 2, vibeScore: 2,
+    vibes: ["맛집", "술집"],
+    eveningTraffic: "low", commerceGrade: "B",
+    lat: 37.3608, lng: 126.9342,
+    note: "군포 중심 상권. 산본신도시 수렴"
+  },
+  {
+    id: "sanbon",
+    tier: 3, name: "산본역", region: "경기", district: "군포시",
+    lines: ["4호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["맛집", "쇼핑", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.3609, lng: 126.9295,
+    note: "산본신도시 중심. 롯데마트·CGV 산본. 군포·의왕 수렴"
+  },
+  {
+    id: "euiwang",
+    tier: 3, name: "의왕역", region: "경기", district: "의왕시",
+    lines: ["1호선"],
+    connectivity: 2, psychological: 2, vibeScore: 2,
+    vibes: ["맛집"],
+    eveningTraffic: "low", commerceGrade: "B",
+    lat: 37.3480, lng: 126.9741,
+    note: "의왕 상권. 인덕원·범계 위성 거점"
+  },
+  {
+    id: "suwon_ingye",
+    tier: 3, name: "인계역(수원)", region: "경기", district: "수원시",
+    lines: ["수인분당선"],
+    connectivity: 2, psychological: 2, vibeScore: 3,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.2601, lng: 127.0277,
+    note: "수원 팔달구 먹자골목. 수원역 동부 위성 상권"
+  },
+  {
+    id: "yongin_suji",
+    tier: 3, name: "죽전역", region: "경기", district: "용인시",
+    lines: ["수인분당선"],
+    connectivity: 2, psychological: 2, vibeScore: 3,
+    vibes: ["맛집", "카페", "쇼핑"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.3262, lng: 127.1085,
+    note: "용인 수지구 중심. 수지구청역 일대 카페·맛집 밀집"
+  },
+  {
+    id: "yongin_bojeong",
+    tier: 3, name: "보정역", region: "경기", district: "용인시",
+    lines: ["수인분당선"],
+    connectivity: 2, psychological: 2, vibeScore: 3,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.3052, lng: 127.1119,
+    note: "용인 기흥·수지 경계 상권. 죽전~기흥 연결 거점"
+  },
+  {
+    id: "hwaseong_dongtan2",
+    tier: 3, name: "병점역", region: "경기", district: "화성시",
+    lines: ["1호선"],
+    connectivity: 2, psychological: 2, vibeScore: 3,
+    vibes: ["맛집", "쇼핑", "술집"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.2059, lng: 127.0456,
+    note: "화성 병점 상권. 동탄 위성 거점. CGV·이마트 병점"
+  },
+
+  // ── 추가 6개 (100개 완성) ──
+  {
+    id: "garosu",
+    tier: 2, name: "신사역(가로수길)", region: "서울", district: "강남구",
+    lines: ["3호선"],
+    connectivity: 2, psychological: 4, vibeScore: 5,
+    vibes: ["카페", "맛집", "쇼핑", "팝업"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5170, lng: 127.0204,
+    note: "가로수길·세로수길. 트렌디 팝업·카페 밀집. SNS 기반 심리적 인지도 상위 [S7]"
+  },
+  {
+    id: "dongmyo_ihwa",
+    tier: 2, name: "혜화역", region: "서울", district: "종로구",
+    lines: ["4호선"],
+    connectivity: 2, psychological: 3, vibeScore: 4,
+    vibes: ["맛집", "카페", "공연", "술집"],
+    eveningTraffic: "high", commerceGrade: "A",
+    lat: 37.5824, lng: 127.0019,
+    note: "대학로 공연·문화 상권. 이화동·낙산 카페거리. 저녁 유동인구 강함 [S4]"
+  },
+  {
+    id: "icheon",
+    tier: 3, name: "이천역", region: "경기", district: "이천시",
+    lines: ["경강선"],
+    connectivity: 2, psychological: 2, vibeScore: 2,
+    vibes: ["맛집"],
+    eveningTraffic: "low", commerceGrade: "B",
+    lat: 37.2748, lng: 127.4421,
+    note: "이천 중심 상권. 경강선 종점. 쌀밥·도자기 특화 관광 상권"
+  },
+  {
+    id: "hanam_starfield",
+    tier: 3, name: "하남풍산역", region: "경기", district: "하남시",
+    lines: ["5호선"],
+    connectivity: 2, psychological: 3, vibeScore: 3,
+    vibes: ["쇼핑", "맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.5378, lng: 127.2077,
+    note: "스타필드 하남 인근 역. 주말 가족·커플 약속 특화"
+  },
+  {
+    id: "uiwang_bugok",
+    tier: 3, name: "부곡역(의왕)", region: "경기", district: "의왕시",
+    lines: ["1호선"],
+    connectivity: 2, psychological: 2, vibeScore: 2,
+    vibes: ["맛집"],
+    eveningTraffic: "low", commerceGrade: "B",
+    lat: 37.3701, lng: 126.9773,
+    note: "의왕 부곡 상권. 군포·안양 경계 거점"
+  },
+  {
+    id: "gwacheon",
+    tier: 3, name: "과천역", region: "경기", district: "과천시",
+    lines: ["4호선"],
+    connectivity: 2, psychological: 2, vibeScore: 3,
+    vibes: ["맛집", "카페"],
+    eveningTraffic: "medium", commerceGrade: "B",
+    lat: 37.4286, lng: 126.9877,
+    note: "과천시 중심. 서울대공원·경마공원 인접. 4호선 직통"
+  },
+];
+
+export default COMMERCE_HUBS;

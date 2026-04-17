@@ -1,48 +1,21 @@
+import { COMMERCE_HUBS } from "../../priority_place_100/commerce_hubs.js";
+
 export type StationTier = 1 | 2 | 3;
+
+export type StationRegion = "서울" | "경기" | "인천";
 
 export interface StationMaster {
   name: string;
   tier: StationTier;
-  region: "서울" | "경기";
+  region: StationRegion;
 }
 
-export const STATION_MASTERS: StationMaster[] = [
-  { name: "강남역", tier: 1, region: "서울" },
-  { name: "홍대입구역", tier: 1, region: "서울" },
-  { name: "건대입구역", tier: 1, region: "서울" },
-  { name: "명동역", tier: 1, region: "서울" },
-  { name: "잠실역", tier: 1, region: "서울" },
-  { name: "서울역", tier: 1, region: "서울" },
-  { name: "용산역", tier: 1, region: "서울" },
-  { name: "수원역", tier: 1, region: "경기" },
-  { name: "판교역", tier: 1, region: "경기" },
-  { name: "서현역", tier: 1, region: "경기" },
-
-  { name: "사당역", tier: 2, region: "서울" },
-  { name: "신도림역", tier: 2, region: "서울" },
-  { name: "영등포역", tier: 2, region: "서울" },
-  { name: "왕십리역", tier: 2, region: "서울" },
-  { name: "고속터미널역", tier: 2, region: "서울" },
-  { name: "합정역", tier: 2, region: "서울" },
-  { name: "성수역", tier: 2, region: "서울" },
-  { name: "을지로입구역", tier: 2, region: "서울" },
-  { name: "범계역", tier: 2, region: "경기" },
-  { name: "인덕원역", tier: 2, region: "경기" },
-  { name: "부평역", tier: 2, region: "경기" },
-  { name: "정발산역", tier: 2, region: "경기" },
-  { name: "구리역", tier: 2, region: "경기" },
-
-  { name: "노원역", tier: 3, region: "서울" },
-  { name: "수유역", tier: 3, region: "서울" },
-  { name: "천호역", tier: 3, region: "서울" },
-  { name: "목동역", tier: 3, region: "서울" },
-  { name: "서울대입구역", tier: 3, region: "서울" },
-  { name: "불광역", tier: 3, region: "서울" },
-  { name: "상동역", tier: 3, region: "경기" },
-  { name: "철산역", tier: 3, region: "경기" },
-  { name: "야탑역", tier: 3, region: "경기" },
-  { name: "금정역", tier: 3, region: "경기" }
-];
+/** 수도권 상권 거점 100 — `priority_place_100/commerce_hubs.ts` 단일 소스 */
+export const STATION_MASTERS: StationMaster[] = COMMERCE_HUBS.map((h) => ({
+  name: h.name,
+  tier: h.tier,
+  region: h.region
+}));
 
 function normalizeStationName(name: string): string {
   return name.replace(/\s+/g, "").replace(/역$/, "");

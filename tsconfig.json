@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["server/**/*.ts"]
+  "include": ["server/**/*.ts", "priority_place_100/commerce_hubs.ts"]
 }
