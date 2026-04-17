@@ -10,7 +10,9 @@ import { MidpointRequest } from "./types.js";
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const webRoot = path.resolve(__dirname, "..");
+// In production, compiled code lives under dist/server — __dirname/../ would be dist/ (no index.html).
+// npm start / npm run dev are run from repo root, so cwd is the correct static root.
+const webRoot = process.cwd();
 const nodeEnv = process.env.NODE_ENV ?? "development";
 const configuredOrigins = (process.env.ALLOWED_ORIGINS ?? "")
   .split(",")
@@ -91,6 +93,6 @@ app.get("/", (_req, res) => {
 });
 
 const port = Number(process.env.PORT ?? 4000);
-app.listen(port, () => {
-  console.log(`Server listening on http://localhost:${port}`);
+app.listen(port, "0.0.0.0", () => {
+  console.log(`Server listening on port ${port}`);
 });
