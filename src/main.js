@@ -546,7 +546,7 @@ async function renderTopCandidates(results) {
   addReasonOverlay(position, reasonText);
 
   const infoHtml = `
-    <div style="padding:10px;min-width:260px;line-height:1.45;">
+    <div style="padding:10px;max-width:min(92vw,300px);min-width:0;line-height:1.45;word-break:keep-all;">
       <strong>추천 1순위: ${name}</strong><br />
       <span>주소: ${address}</span><br />
       <span style="color:#b7442a;font-weight:700;">${reasonText}</span>
@@ -592,10 +592,10 @@ async function renderTopCandidates(results) {
 
 function addFriendRow(name = "", address = "", addressPlaceholder = "ex. 신도림역") {
   const row = document.createElement("div");
-  row.className = "row";
+  row.className = "row friendRow";
   row.innerHTML = `
-    <input placeholder="이름" value="${name}" class="name" />
-    <input placeholder="${addressPlaceholder}" value="${address}" class="address" style="width:420px" />
+    <input type="text" placeholder="이름" value="${name}" class="name" autocomplete="name" enterkeyhint="next" />
+    <input type="text" placeholder="${addressPlaceholder}" value="${address}" class="address" autocomplete="street-address" enterkeyhint="done" />
   `;
   friendsEl.appendChild(row);
 }

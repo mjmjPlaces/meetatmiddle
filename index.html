@@ -2,7 +2,8 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#fffaf7" />
     <title>중간지점 찾기</title>
     <script>
       window.__kakaoSdk = { loaded: false, errored: false, errorDetail: "" };
@@ -28,6 +29,10 @@
         --shadow: 0 12px 30px rgba(31, 41, 55, 0.08);
       }
       * { box-sizing: border-box; }
+      html {
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+      }
       body {
         margin: 0;
         font-family: "Pretendard", "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -36,11 +41,13 @@
           radial-gradient(circle at 12% 10%, #ffe7dc 0, #fffaf7 35%),
           radial-gradient(circle at 92% 0, #ffece3 0, #fffaf7 26%),
           var(--bg);
+        overflow-x: hidden;
       }
       .container {
         max-width: 1100px;
         margin: 0 auto;
-        padding: 22px 14px 28px;
+        padding: 16px 12px;
+        padding-bottom: max(24px, env(safe-area-inset-bottom, 0px));
       }
       .inputPanel {
         max-width: 760px;
@@ -51,7 +58,21 @@
         background: var(--surface);
         box-shadow: var(--shadow);
       }
-      .row { display: flex; gap: 10px; margin-bottom: 10px; }
+      .row { display: flex; gap: 10px; margin-bottom: 10px; align-items: stretch; }
+      /* 친구 이름 + 주소: 데스크톱 가로, 모바일 세로 */
+      #friends .row.friendRow { align-items: center; }
+      #friends .row.friendRow .name {
+        flex: 0 0 7.5rem;
+        min-width: 0;
+      }
+      #friends .row.friendRow .address {
+        flex: 1 1 auto;
+        min-width: 0;
+        width: 100%;
+      }
+      .row.modeRow { flex-wrap: wrap; }
+      .row.modeRow select { flex: 1 1 160px; min-width: 0; }
+      .row.modeRow #run { flex: 1 1 140px; min-height: 48px; }
       input, select, button {
         border-radius: 12px;
         border: 1px solid #ebd2c5;
@@ -67,29 +88,35 @@
         outline-offset: 1px;
       }
       .btnAccent {
-        padding: 10px 14px;
+        padding: 12px 16px;
         border: 1px solid var(--primary);
         background: var(--primary);
         color: #fff;
         font-weight: 700;
         cursor: pointer;
+        min-height: 48px;
+        touch-action: manipulation;
       }
       .btnAccent:hover { background: var(--primary-strong); border-color: var(--primary-strong); }
       .btnGhost {
-        padding: 10px 14px;
+        padding: 12px 16px;
         background: #fff;
         color: var(--text);
         font-weight: 600;
         cursor: pointer;
+        min-height: 48px;
+        touch-action: manipulation;
       }
       .btnPrimary {
-        padding: 8px 10px;
+        padding: 12px 14px;
         border: 1px solid var(--primary);
         background: #fff7f2;
         border-radius: 10px;
         color: #b7442a;
         font-weight: 700;
         cursor: pointer;
+        min-height: 44px;
+        touch-action: manipulation;
       }
       #mapWrap {
         margin-top: 14px;
@@ -104,6 +131,7 @@
         height: min(74vh, 760px);
         border: 1px solid var(--line);
         border-radius: 14px;
+        touch-action: pan-x pan-y pinch-zoom;
       }
       #mapStatus { margin-top: 8px; color: var(--muted); font-size: 13px; }
       #cards { margin-top: 10px; }
@@ -125,6 +153,7 @@
       .friendName { font-weight: 700; }
       .friendTime { color: #111827; }
       .cardActions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+      .cardActions .btnPrimary { flex: 1 1 calc(50% - 4px); min-width: 140px; }
       #result { margin-top: 10px; color: #333; }
 
       /* Bottom sheet */
@@ -145,9 +174,10 @@
         border-top-right-radius: 16px;
         box-shadow: 0 -10px 30px rgba(0,0,0,0.2);
         display: none;
-        max-height: 70vh;
+        max-height: 85vh;
         overflow: auto;
         z-index: 10001;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
       }
       #sheetHeader {
         padding: 12px 14px;
@@ -158,7 +188,7 @@
         gap: 12px;
       }
       #sheetTitle { font-weight: 700; }
-      #sheetClose { border: 1px solid #ccc; background: #fff; border-radius: 10px; padding: 6px 10px; cursor: pointer; }
+      #sheetClose { border: 1px solid #ccc; background: #fff; border-radius: 10px; padding: 10px 14px; cursor: pointer; min-height: 44px; touch-action: manipulation; }
       #sheetBody { padding: 12px 14px; }
       #friendSelect { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid #ddd; }
       #pathList { margin: 10px 0 0; padding-left: 18px; color: #333; font-size: 14px; }
@@ -245,11 +275,44 @@
       }
 
       @media (max-width: 720px) {
-        .row {
+        .container { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+        .inputPanel { padding: 14px 12px; border-radius: 16px; }
+        #friends .row.friendRow {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        #friends .row.friendRow .name {
+          flex: none;
+          width: 100%;
+        }
+        .row.modeRow {
           flex-direction: column;
         }
+        .row.modeRow select,
+        .row.modeRow #run {
+          width: 100%;
+          flex: none;
+        }
+        /* iOS: 입력 포커스 시 자동 확대 방지 */
+        input, select, button, textarea {
+          font-size: 16px;
+        }
+        #mapWrap { padding: 8px; margin-top: 12px; }
         #map {
-          height: 68vh;
+          height: min(48vh, 360px);
+          min-height: 200px;
+        }
+        @supports (height: 1svh) {
+          #map { height: min(48svh, 360px); }
+        }
+        #mapStatus { font-size: 12px; line-height: 1.4; }
+        .card { padding: 14px 12px; }
+        .cardActions .btnPrimary {
+          flex: 1 1 100%;
+          min-width: 0;
+        }
+        #addFriend {
+          width: 100%;
         }
       }
     </style>
@@ -259,8 +322,8 @@
       <section class="inputPanel">
         <div id="friends"></div>
         <button id="addFriend" class="btnGhost" type="button">친구 추가</button>
-        <div class="row" style="margin-top:10px; margin-bottom:0;">
-          <select id="mode">
+        <div class="row modeRow" style="margin-top:10px; margin-bottom:0;">
+          <select id="mode" aria-label="점수 모드">
             <option value="balanced">균등(공정)</option>
             <option value="majority">비균등(다수 최적)</option>
           </select>
