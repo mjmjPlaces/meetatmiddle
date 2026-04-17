@@ -23,6 +23,18 @@ const stationPlaceholders = [
   "ex. 잠실역"
 ];
 
+/** Vercel은 정적 호스팅만 하고 API는 Railway에서 제공. 같은 호스트가 아니면 Railway URL로 직접 호출 (CORS는 ALLOWED_ORIGINS로 허용). */
+const RAILWAY_API_ORIGIN = "https://meetatmiddle-production.up.railway.app";
+
+function apiUrl(path) {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  const h = window.location.hostname;
+  const apiOnSameHost =
+    h === "localhost" || h === "127.0.0.1" || h.endsWith(".up.railway.app");
+  if (apiOnSameHost) return p;
+  return `${RAILWAY_API_ORIGIN}${p}`;
+}
+
 let map;
 let geocoder;
 let markers = [];
@@ -45,7 +57,7 @@ async function injectKakaoSdk() {
   mapStatusEl.textContent = "Kakao SDK 스크립트 요청 중...";
 
   try {
-    const res = await fetch("/api/public-config");
+    const res = await fetch(apiUrl("/api/public-config"));
     const data = await res.json();
     kakaoJsKey = data?.kakaoJsKey || "";
   } catch {
@@ -385,7 +397,9 @@ async function drawRouteOnMap(raw) {
   const mapObj = extractMapObj(raw);
   if (!mapObj) return;
 
-  const res = await fetch(`/api/odsay/loadLane?mapObj=${encodeURIComponent(mapObj)}`);
+  const res = await fetch(
+    apiUrl(`/api/odsay/loadLane?mapObj=${encodeURIComponent(mapObj)}`)
+  );
   const data = await res.json();
   if (data?.error) {
     console.warn("loadLane error", data.error);
@@ -620,7 +634,7 @@ runBtn.addEventListener("click", async () => {
   cardsEl.innerHTML = "";
   clearMapObjects();
   try {
-    const res = await fetch("http://localhost:4000/api/midpoint", {
+    const res = await fetch(apiUrl("/api/midpoint"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)

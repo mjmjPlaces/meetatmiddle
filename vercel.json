@@ -2,11 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm install --include=dev",
   "buildCommand": "npm run build",
-  "outputDirectory": ".",
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "https://meetatmiddle-production.up.railway.app/api/:path*"
-    }
-  ]
+  "outputDirectory": "."
 }

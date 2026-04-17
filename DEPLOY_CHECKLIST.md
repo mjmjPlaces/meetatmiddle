@@ -89,8 +89,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\git-first-push.ps1
 
 ### API 경로
 
-브라우저는 Vercel 도메인에만 요청하고, `vercel.json`의 **rewrites**로 `/api/*`를 Railway 백엔드로 넘깁니다.  
-Railway URL이 바뀌면 `vercel.json`의 `destination` URL을 수정한 뒤 다시 배포합니다.
+프론트(Vercel)와 API(Railway)가 **도메인이 다르므로**, 브라우저는 `src/main.js`의 `RAILWAY_API_ORIGIN`으로 Railway에 **직접** `fetch`합니다.  
+Railway 공개 URL이 바뀌면 해당 상수를 수정한 뒤 다시 배포합니다.  
+CORS는 Railway `ALLOWED_ORIGINS`에 Vercel 도메인을 넣어 두면 됩니다.
 
 ### Railway `ALLOWED_ORIGINS`
 
