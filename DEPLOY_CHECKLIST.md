@@ -76,7 +76,29 @@ powershell -ExecutionPolicy Bypass -File .\scripts\git-first-push.ps1
 
 - [ ] Vercel 프로젝트 생성 + GitHub 연결
 - [ ] 프로덕션/프리뷰 도메인 확인
-- [ ] (필요 시) `API_BASE_URL=https://<railway-backend-domain>` 설정
+
+### Vercel 프로젝트 설정 (이 레포 기준)
+
+저장소 루트에 `vercel.json`이 있으면 빌드/출력/API 프록시가 여기에 맞춰집니다.
+
+- **Root Directory**: `./` (또는 비움)
+- **Framework Preset**: **Other** (자동으로 Next 등으로 잡히면 수동으로 Other로 변경)
+- **Install Command**: `npm install --include=dev` (`vercel.json`에 반영됨 — `tsc`가 `devDependencies`에 있어서 필요)
+- **Build Command**: `npm run build` (`vercel.json`에 반영됨)
+- **Output Directory**: `.` (루트의 `index.html`, `src/` 등을 그대로 배포)
+
+### API 경로
+
+브라우저는 Vercel 도메인에만 요청하고, `vercel.json`의 **rewrites**로 `/api/*`를 Railway 백엔드로 넘깁니다.  
+Railway URL이 바뀌면 `vercel.json`의 `destination` URL을 수정한 뒤 다시 배포합니다.
+
+### Railway `ALLOWED_ORIGINS`
+
+Vercel 프로덕션·프리뷰 URL을 콤마로 추가합니다. 예:
+
+`https://meetatmiddle-production.up.railway.app,https://<your-project>.vercel.app,https://<your-project>-*.vercel.app`
+
+(프리뷰는 패턴이 달라서 배포 후 실제 Vercel URL을 확인해 넣는 것이 안전합니다.)
 
 ## 4) Kakao / ODsay 콘솔 설정
 
