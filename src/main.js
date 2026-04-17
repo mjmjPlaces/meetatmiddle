@@ -610,7 +610,7 @@ async function renderTopCandidates(results) {
 
 function addFriendRow(name = "", address = "", addressPlaceholder = "ex. 신도림역") {
   const row = document.createElement("div");
-  row.className = "grid grid-cols-1 gap-2 sm:grid-cols-[120px_1fr]";
+  row.className = "friend-row grid grid-cols-1 gap-2 sm:grid-cols-[120px_1fr]";
   row.innerHTML = `
     <input type="text" placeholder="이름" value="${name}" class="name h-12 rounded-2xl border border-coral-200 bg-[#fffdfb] px-3" autocomplete="name" enterkeyhint="next" />
     <input type="text" placeholder="${addressPlaceholder}" value="${address}" class="address h-12 rounded-2xl border border-coral-200 bg-[#fffdfb] px-3" autocomplete="street-address" enterkeyhint="done" />
@@ -621,13 +621,13 @@ function addFriendRow(name = "", address = "", addressPlaceholder = "ex. 신도�
 addFriendRow("친구1", "", "ex. 신도림역");
 addFriendRow("친구2", "", "ex. 문정역");
 addFriendBtn.addEventListener("click", () => {
-  const nextIndex = friendsEl.querySelectorAll(".row").length + 1;
+  const nextIndex = friendsEl.querySelectorAll(".friend-row").length + 1;
   const placeholder = stationPlaceholders[(nextIndex - 1) % stationPlaceholders.length];
   addFriendRow(`친구${nextIndex}`, "", placeholder);
 });
 
 runBtn.addEventListener("click", async () => {
-  const rows = [...friendsEl.querySelectorAll(".row")];
+  const rows = [...friendsEl.querySelectorAll(".friend-row")];
   const friends = rows
     .map((row, index) => ({
       id: `f-${index + 1}`,
