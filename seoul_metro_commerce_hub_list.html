@@ -1,0 +1,179 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans)}
+.wrap{padding:1rem 0}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1.25rem;align-items:center}
+.ctrl-label{font-size:13px;color:var(--color-text-secondary);margin-right:4px}
+select,input[type=text]{font-size:13px;padding:6px 10px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-primary);color:var(--color-text-primary);outline:none}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:1.25rem}
+.stat{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:.75rem 1rem}
+.stat-label{font-size:12px;color:var(--color-text-secondary);margin-bottom:4px}
+.stat-val{font-size:22px;font-weight:500;color:var(--color-text-primary)}
+.tier-section{margin-bottom:1.5rem}
+.tier-header{display:flex;align-items:center;gap:8px;margin-bottom:.75rem;padding-bottom:.5rem;border-bottom:0.5px solid var(--color-border-tertiary)}
+.tier-badge{font-size:12px;font-weight:500;padding:3px 10px;border-radius:var(--border-radius-md)}
+.t1-badge{background:#EEEDFE;color:#3C3489}
+.t2-badge{background:#E1F5EE;color:#085041}
+.t3-badge{background:#FAEEDA;color:#633806}
+.tier-desc{font-size:12px;color:var(--color-text-secondary)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px}
+.card{background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:.75rem 1rem;cursor:pointer;transition:border-color .15s}
+.card:hover{border-color:var(--color-border-primary)}
+.card-top{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px}
+.card-name{font-size:15px;font-weight:500;color:var(--color-text-primary)}
+.card-sub{font-size:12px;color:var(--color-text-secondary);margin-top:2px}
+.score-pill{font-size:13px;font-weight:500;padding:2px 9px;border-radius:var(--border-radius-md);white-space:nowrap}
+.s-t1{background:#EEEDFE;color:#3C3489}
+.s-t2{background:#E1F5EE;color:#085041}
+.s-t3{background:#FAEEDA;color:#633806}
+.bars{margin-top:6px;display:grid;gap:4px}
+.bar-row{display:flex;align-items:center;gap:6px;font-size:11px}
+.bar-label{width:56px;color:var(--color-text-secondary);flex-shrink:0;text-align:right}
+.bar-track{flex:1;height:5px;background:var(--color-border-tertiary);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px}
+.tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
+.tag{font-size:11px;padding:2px 7px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);color:var(--color-text-secondary)}
+.empty{text-align:center;padding:2rem;color:var(--color-text-secondary);font-size:14px}
+.hidden{display:none}
+</style>
+
+<div class="wrap">
+<h2 class="sr-only">수도권 상권 거점 리스트 — Tier별 분류 및 메타데이터</h2>
+
+<div class="controls">
+  <span class="ctrl-label">Tier</span>
+  <select id="tierFilter">
+    <option value="all">전체</option>
+    <option value="1">Tier 1</option>
+    <option value="2">Tier 2</option>
+    <option value="3">Tier 3</option>
+  </select>
+  <span class="ctrl-label" style="margin-left:8px">지역</span>
+  <select id="regionFilter">
+    <option value="all">전체</option>
+    <option value="서울">서울</option>
+    <option value="경기">경기/인천</option>
+  </select>
+  <span class="ctrl-label" style="margin-left:8px">검색</span>
+  <input type="text" id="search" placeholder="역명 검색..." style="width:140px">
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="stat-label">전체 거점</div><div class="stat-val" id="st-total">0</div></div>
+  <div class="stat"><div class="stat-label">Tier 1</div><div class="stat-val" id="st-t1">0</div></div>
+  <div class="stat"><div class="stat-label">Tier 2</div><div class="stat-val" id="st-t2">0</div></div>
+  <div class="stat"><div class="stat-label">Tier 3</div><div class="stat-val" id="st-t3">0</div></div>
+</div>
+
+<div id="list"></div>
+</div>
+
+<script>
+const DATA = [
+  {tier:1,region:"서울",name:"강남역",lines:["2호선","신분당선"],connectivity:5,vibe:["맛집","카페","쇼핑","술집"],psych:5,note:"수도권 최고 심리적 중심지. 사방 어디서도 '강남에서 보자'가 통함"},
+  {tier:1,region:"서울",name:"홍대입구역",lines:["2호선","공항철도","경의중앙선"],connectivity:5,vibe:["술집","카페","클럽","맛집"],psych:5,note:"20-30대 집결지. 저녁~심야 유동인구 압도적"},
+  {tier:1,region:"서울",name:"건대입구역",lines:["2호선","7호선"],connectivity:4,vibe:["맛집","술집","카페"],psych:4,note:"2·7호선 환승. 강북 동부권 핵심 상권"},
+  {tier:1,region:"서울",name:"명동역",lines:["4호선"],connectivity:3,vibe:["쇼핑","카페","맛집"],psych:4,note:"외국인·관광객 포함 전국구 인지도"},
+  {tier:1,region:"서울",name:"잠실역",lines:["2호선","8호선"],connectivity:4,vibe:["쇼핑","맛집","엔터테인먼트"],psych:5,note:"롯데월드·스타필드 코엑스 인접. 강동·경기 남동부 거점"},
+  {tier:1,region:"서울",name:"서울역",lines:["1호선","4호선","경의중앙선","공항철도"],connectivity:5,vibe:["맛집","쇼핑"],psych:4,note:"전국 철도 허브. 지방→서울 약속의 기본값"},
+  {tier:1,region:"서울",name:"용산역",lines:["1호선","경의중앙선"],connectivity:4,vibe:["쇼핑","맛집","카페"],psych:4,note:"아이파크몰 + KTX환승. 서울 서부권 허브"},
+  {tier:1,region:"경기",name:"수원역",lines:["1호선","수인분당선"],connectivity:4,vibe:["맛집","쇼핑","술집"],psych:5,note:"경기 남부 최대 상권. 화성·용인·오산 수렴"},
+  {tier:1,region:"경기",name:"판교역",lines:["신분당선","경강선"],connectivity:3,vibe:["카페","맛집","쇼핑"],psych:4,note:"IT클러스터·알파돔시티. 직장인 약속 Top3"},
+  {tier:1,region:"경기",name:"서현역",lines:["수인분당선"],connectivity:2,vibe:["맛집","카페","쇼핑"],psych:4,note:"분당 중심 상권. AK플라자·서현역 일대"},
+
+  {tier:2,region:"서울",name:"사당역",lines:["2호선","4호선"],connectivity:4,vibe:["맛집","술집","카페"],psych:4,note:"2·4호선 + 과천선 직결. 서울 남부·경기 북부 교통요충"},
+  {tier:2,region:"서울",name:"신도림역",lines:["1호선","2호선"],connectivity:4,vibe:["쇼핑","맛집"],psych:4,note:"1·2호선 최대 환승역. 디큐브·테크노마트"},
+  {tier:2,region:"서울",name:"영등포역",lines:["1호선","경인선"],connectivity:3,vibe:["쇼핑","맛집","술집"],psych:3,note:"타임스퀘어·영등포 시장. 서울 서남부 거점"},
+  {tier:2,region:"서울",name:"왕십리역",lines:["2호선","5호선","경의중앙선","수인분당선"],connectivity:5,vibe:["맛집","술집","카페"],psych:4,note:"4개 노선 환승. 성동구 핵심"},
+  {tier:2,region:"서울",name:"고속터미널역",lines:["3호선","7호선","9호선"],connectivity:5,vibe:["쇼핑","맛집","카페"],psych:4,note:"3·7·9호선 + 센트럴시티·반포"},
+  {tier:2,region:"서울",name:"합정역",lines:["2호선","6호선"],connectivity:3,vibe:["카페","맛집","술집"],psych:4,note:"합정·망원 카페거리. 홍대 오버플로우 상권"},
+  {tier:2,region:"서울",name:"성수역",lines:["2호선"],connectivity:2,vibe:["카페","맛집","팝업"],psych:4,note:"힙스터 성지. SNS 기반 심리적 중심성 급상승"},
+  {tier:2,region:"서울",name:"을지로입구역",lines:["2호선"],connectivity:2,vibe:["맛집","술집","카페"],psych:3,note:"힙한 노포 골목문화. 직장인+MZ세대 공존"},
+  {tier:2,region:"경기",name:"범계역",lines:["4호선"],connectivity:2,vibe:["맛집","술집","쇼핑"],psych:4,note:"안양 최대 상권. 4호선 직통으로 서울 접근 우수"},
+  {tier:2,region:"경기",name:"인덕원역",lines:["4호선"],connectivity:2,vibe:["맛집","카페"],psych:3,note:"안양·의왕·과천 삼각 교통요충"},
+  {tier:2,region:"경기",name:"부평역",lines:["1호선","7호선"],connectivity:3,vibe:["쇼핑","맛집","술집"],psych:4,note:"인천·부천 최대 상권. 지하상가 규모 전국급"},
+  {tier:2,region:"경기",name:"정발산역",lines:["3호선"],connectivity:2,vibe:["맛집","카페","쇼핑"],psych:4,note:"일산 라페스타·웨스턴돔 인접"},
+  {tier:2,region:"경기",name:"구리역",lines:["경의중앙선"],connectivity:2,vibe:["맛집","술집"],psych:3,note:"서울 동북부·경기 동부 연결 거점"},
+
+  {tier:3,region:"서울",name:"노원역",lines:["4호선","7호선"],connectivity:3,vibe:["맛집","쇼핑","술집"],psych:3,note:"노도강 최대 상권. 중계·상계 수렴"},
+  {tier:3,region:"서울",name:"수유역",lines:["4호선"],connectivity:2,vibe:["맛집","술집"],psych:3,note:"강북구 중심. 북한산 인접 외식 수요"},
+  {tier:3,region:"서울",name:"천호역",lines:["5호선","8호선"],connectivity:3,vibe:["쇼핑","맛집","술집"],psych:3,note:"5·8호선 환승. 강동구 전통 상권"},
+  {tier:3,region:"서울",name:"목동역",lines:["5호선"],connectivity:2,vibe:["맛집","카페","학원"],psych:3,note:"양천·강서 교육+상권 복합"},
+  {tier:3,region:"서울",name:"서울대입구역",lines:["2호선"],connectivity:2,vibe:["맛집","카페","술집"],psych:3,note:"관악구 대학가 상권. 샤로수길"},
+  {tier:3,region:"서울",name:"불광역",lines:["3호선","6호선"],connectivity:3,vibe:["맛집","술집"],psych:3,note:"은평·서대문 서북부 거점"},
+  {tier:3,region:"경기",name:"상동역",lines:["7호선"],connectivity:2,vibe:["쇼핑","맛집","카페"],psych:3,note:"부천 동부 중심. 까르푸·상동호수공원"},
+  {tier:3,region:"경기",name:"철산역",lines:["7호선"],connectivity:2,vibe:["맛집","술집","카페"],psych:3,note:"광명·안양 접근성. 7호선 경기 서남부"},
+  {tier:3,region:"경기",name:"야탑역",lines:["수인분당선"],connectivity:2,vibe:["맛집","쇼핑","술집"],psych:3,note:"성남 동부 상권. AK플라자 야탑"},
+  {tier:3,region:"경기",name:"금정역",lines:["1호선","4호선"],connectivity:3,vibe:["맛집","술집"],psych:3,note:"1·4호선 환승. 군포·의왕·안양 연결"},
+];
+
+const COLORS = {1:"s-t1",2:"s-t2",3:"s-t3"};
+const BADGE = {1:"t1-badge",2:"t2-badge",3:"t3-badge"};
+const TIER_DESC = {
+  1:"초거대 허브 — 전국구 인지도, 압도적 유동인구",
+  2:"광역 거점 — 교통 요충 + 대형 상권",
+  3:"지역 거점 — 역세권 상권 발달"
+};
+const VIBE_COLORS = {"맛집":"#EEEDFE","카페":"#E1F5EE","술집":"#FAEEDA","쇼핑":"#FAECE7","팝업":"#E6F1FB","클럽":"#FCEBEB","엔터테인먼트":"#EAF3DE","학원":"#F1EFE8"};
+const VIBE_TEXT = {"맛집":"#3C3489","카페":"#085041","술집":"#633806","쇼핑":"#993C1D","팝업":"#185FA5","클럽":"#A32D2D","엔터테인먼트":"#3B6D11","학원":"#5F5E5A"};
+
+function scoreColor(tier){return ["","#7F77DD","#1D9E75","#BA7517"][tier]}
+function render(){
+  const tf = document.getElementById('tierFilter').value;
+  const rf = document.getElementById('regionFilter').value;
+  const q = document.getElementById('search').value.trim();
+  let items = DATA.filter(d=>{
+    if(tf!=='all'&&String(d.tier)!==tf)return false;
+    if(rf!=='all'&&d.region!==rf)return false;
+    if(q&&!d.name.includes(q))return false;
+    return true;
+  });
+  document.getElementById('st-total').textContent=items.length;
+  document.getElementById('st-t1').textContent=items.filter(x=>x.tier===1).length;
+  document.getElementById('st-t2').textContent=items.filter(x=>x.tier===2).length;
+  document.getElementById('st-t3').textContent=items.filter(x=>x.tier===3).length;
+  const list = document.getElementById('list');
+  if(!items.length){list.innerHTML='<div class="empty">검색 결과가 없습니다</div>';return;}
+  let html='';
+  [1,2,3].forEach(t=>{
+    const group=items.filter(d=>d.tier===t);
+    if(!group.length)return;
+    html+=`<div class="tier-section">
+      <div class="tier-header">
+        <span class="tier-badge ${BADGE[t]}">Tier ${t}</span>
+        <span class="tier-desc">${TIER_DESC[t]}</span>
+      </div>
+      <div class="grid">`;
+    group.forEach(d=>{
+      const conn=d.connectivity;
+      const psych=d.psych;
+      const vibe=d.vibe.length;
+      html+=`<div class="card">
+        <div class="card-top">
+          <div>
+            <div class="card-name">${d.name}</div>
+            <div class="card-sub">${d.region} · ${d.lines.join(' / ')}</div>
+          </div>
+          <span class="score-pill ${COLORS[d.tier]}" style="margin-left:8px">T${d.tier}</span>
+        </div>
+        <div class="bars">
+          <div class="bar-row"><span class="bar-label">환승성</span><div class="bar-track"><div class="bar-fill" style="width:${conn/5*100}%;background:${scoreColor(d.tier)}"></div></div><span style="font-size:11px;color:var(--color-text-secondary);width:20px">${conn}/5</span></div>
+          <div class="bar-row"><span class="bar-label">심리중심</span><div class="bar-track"><div class="bar-fill" style="width:${psych/5*100}%;background:${scoreColor(d.tier)}"></div></div><span style="font-size:11px;color:var(--color-text-secondary);width:20px">${psych}/5</span></div>
+          <div class="bar-row"><span class="bar-label">Vibe 다양</span><div class="bar-track"><div class="bar-fill" style="width:${vibe/5*100}%;background:${scoreColor(d.tier)}"></div></div><span style="font-size:11px;color:var(--color-text-secondary);width:20px">${vibe}/5</span></div>
+        </div>
+        <div class="tags">
+          ${d.vibe.map(v=>`<span class="tag" style="background:${VIBE_COLORS[v]||'var(--color-background-secondary)'};color:${VIBE_TEXT[v]||'var(--color-text-secondary)'}">${v}</span>`).join('')}
+        </div>
+        <div style="font-size:11px;color:var(--color-text-secondary);margin-top:8px;line-height:1.5">${d.note}</div>
+      </div>`;
+    });
+    html+='</div></div>';
+  });
+  list.innerHTML=html;
+}
+document.getElementById('tierFilter').onchange=render;
+document.getElementById('regionFilter').onchange=render;
+document.getElementById('search').oninput=render;
+render();
+</script>
