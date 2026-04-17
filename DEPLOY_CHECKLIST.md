@@ -97,9 +97,13 @@ CORS는 Railway `ALLOWED_ORIGINS`에 Vercel 도메인을 넣어 두면 됩니다
 
 Vercel 프로덕션·프리뷰 URL을 콤마로 추가합니다. 예:
 
-`https://meetatmiddle-production.up.railway.app,https://<your-project>.vercel.app,https://<your-project>-*.vercel.app`
+`https://meetatmiddle-production.up.railway.app,https://midpoint-navigator.vercel.app`
 
-(프리뷰는 패턴이 달라서 배포 후 실제 Vercel URL을 확인해 넣는 것이 안전합니다.)
+- **끝에 `/` 넣지 않기** — 브라우저 `Origin` 헤더는 슬래시 없이 옵니다 (`https://midpoint-navigator.vercel.app`).
+- 값 수정 후 Railway가 **재배포**될 때까지 잠시 기다리기.
+- 서버 로그에 `[cors] allowed origins:` 로 실제 반영 여부 확인 가능.
+
+(프리뷰 URL은 호스트가 매번 다를 수 있어, 필요할 때마다 동일 형식으로 추가.)
 
 ## 4) Kakao / ODsay 콘솔 설정
 

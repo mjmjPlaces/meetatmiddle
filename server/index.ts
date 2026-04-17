@@ -49,17 +49,22 @@ if (nodeEnv !== "production") {
   allowedOriginSet.add("http://127.0.0.1:5173");
 }
 
-app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin) return callback(null, true);
-      if (allowedOriginSet.has(origin)) return callback(null, true);
-      return callback(new Error("CORS origin not allowed"));
-    },
-    credentials: true
-  })
-);
-app.options("*", cors());
+if (nodeEnv === "production") {
+  console.log("[cors] allowed origins:", [...allowedOriginSet].join(", ") || "(none — browser cross-origin API will fail)");
+}
+
+const corsOptions: cors.CorsOptions = {
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOriginSet.has(origin)) return callback(null, true);
+    console.warn("[cors] denied origin:", origin);
+    return callback(null, false);
+  },
+  credentials: true
+};
+
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json());
 app.use(express.static(webRoot));
 
