@@ -5,6 +5,7 @@ const modeEl = document.getElementById("mode");
 const resultEl = document.getElementById("result");
 const cardsEl = document.getElementById("cards");
 const mapEl = document.getElementById("map");
+const mapWrapEl = document.getElementById("mapWrap");
 const mapStatusEl = document.getElementById("mapStatus");
 const sheetBackdropEl = document.getElementById("sheetBackdrop");
 const sheetEl = document.getElementById("sheet");
@@ -53,6 +54,16 @@ let routeLabelOverlays = [];
 let reasonOverlays = [];
 let kakaoJsKey = "";
 let lastSharePayload = null;
+/** 상세 시트를 닫은 뒤 전체 경로를 다시 그릴 때 사용 */
+let lastOverviewItem = null;
+/** 결과 화면에서 친구 출발지 핀(세부 경로 모드에서는 잠시 숨김) */
+let friendOverviewEntries = [];
+
+const FRIEND_ROUTE_COLORS = ["#E53935", "#1E88E5", "#43A047", "#FB8C00", "#8E24AA", "#00897B"];
+
+function friendRouteColor(index) {
+  return FRIEND_ROUTE_COLORS[index % FRIEND_ROUTE_COLORS.length];
+}
 
 async function injectKakaoSdk() {
   if (sdkInjected) return;
@@ -136,7 +147,7 @@ function initMap() {
       "지도 준비 완료. (주소 변환 미사용) 마커를 표시할 수 있습니다.";
   }
   if (pendingResultsForMap?.length) {
-    renderTopCandidates(pendingResultsForMap);
+    void renderTopCandidates(pendingResultsForMap);
     pendingResultsForMap = null;
   }
 }
@@ -175,7 +186,24 @@ function ensureMapReady() {
   }, 250);
 }
 
+function clearFriendOverviewPins() {
+  friendOverviewEntries.forEach(({ marker, overlay }) => {
+    marker.setMap(null);
+    overlay.setMap(null);
+  });
+  friendOverviewEntries = [];
+}
+
+function setFriendOverviewPinsVisible(visible) {
+  friendOverviewEntries.forEach(({ marker, overlay }) => {
+    marker.setMap(visible ? map : null);
+    overlay.setMap(visible ? map : null);
+  });
+}
+
 function clearMapObjects() {
+  clearRouteOverlay();
+  clearFriendOverviewPins();
   markers.forEach((marker) => marker.setMap(null));
   infoWindows.forEach((window) => window.close());
   reasonOverlays.forEach((overlay) => overlay.setMap(null));
@@ -259,7 +287,7 @@ async function shareTopCandidate(item, address, reasonText) {
   window.Kakao.Share.sendDefault({
     objectType: "feed",
     content: {
-      title: `우리 모임 1순위 중간지점: ${destinationName}`,
+      title: `쌤밋 · 우리 모임 1순위 중간지점: ${destinationName}`,
       description: `${reasonText} · 평균 ${avgText} / 최대 ${maxText}\n${address}`,
       imageUrl: "https://developers.kakao.com/assets/img/about/logos/kakaolink/kakaolink_btn_small.png",
       link: {
@@ -344,7 +372,10 @@ function openSheet() {
   sheetBackdropEl.style.display = "block";
   sheetEl.style.display = "block";
   document.body.style.overflow = "hidden";
-  if (markers.length) setCandidateMarkersVisible(false);
+  if (map && isMapReady) {
+    map.relayout();
+  }
+  mapWrapEl?.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function closeSheet() {
@@ -353,6 +384,13 @@ function closeSheet() {
   document.body.style.overflow = "";
   clearRouteOverlay();
   if (markersHiddenForSheet) setCandidateMarkersVisible(true);
+  setFriendOverviewPinsVisible(true);
+  if (lastOverviewItem && isMapReady && map) {
+    void redrawMapOverviewRoutes(lastOverviewItem);
+  }
+  if (map && isMapReady) {
+    map.relayout();
+  }
 }
 
 function renderPathList(segments) {
@@ -405,11 +443,22 @@ function extractMapObj(raw) {
   return raw?.result?.path?.[0]?.info?.mapObj || "";
 }
 
-async function drawRouteOnMap(raw) {
-  if (!isMapReady || !map) return;
-  clearRouteOverlay();
+function strokeColorForTransitLane(lane) {
+  const type = Number(lane?.type);
+  if (type === 1) return "#1E88E5";
+  if (type === 2) return "#E53935";
+  if (type === 3) return "#43A047";
+  return "#6D4C41";
+}
+
+/**
+ * ODsay loadLane로 경로 폴리라인을 그린다. routePolylines에 누적한다.
+ * @returns pointCount
+ */
+async function appendPolylinesFromRaw(raw, strokeColorFn, extendBounds) {
+  if (!isMapReady || !map) return 0;
   const mapObj = extractMapObj(raw);
-  if (!mapObj) return;
+  if (!mapObj) return 0;
 
   const res = await fetch(
     apiUrl(`/api/odsay/loadLane?mapObj=${encodeURIComponent(mapObj)}`)
@@ -417,23 +466,15 @@ async function drawRouteOnMap(raw) {
   const data = await res.json();
   if (data?.error) {
     console.warn("loadLane error", data.error);
-    return;
+    return 0;
   }
 
   const lanes = data?.result?.lane ?? [];
-  const bounds = new kakao.maps.LatLngBounds();
   let pointCount = 0;
-
-  const colorForLane = (lane) => {
-    const type = Number(lane?.type);
-    if (type === 1) return "#1E88E5"; // subway
-    if (type === 2) return "#E53935"; // bus
-    if (type === 3) return "#43A047"; // express/intercity
-    return "#6D4C41";
-  };
 
   for (const lane of lanes) {
     const sections = lane?.section ?? [];
+    const strokeColor = strokeColorFn(lane);
     for (const section of sections) {
       const graph = section?.graphPos ?? [];
       if (!graph.length) continue;
@@ -442,7 +483,7 @@ async function drawRouteOnMap(raw) {
           const lat = Number(p.y);
           const lng = Number(p.x);
           const ll = new kakao.maps.LatLng(lat, lng);
-          bounds.extend(ll);
+          if (extendBounds) extendBounds.extend(ll);
           pointCount += 1;
           return ll;
         })
@@ -452,7 +493,7 @@ async function drawRouteOnMap(raw) {
         map,
         path,
         strokeWeight: 5,
-        strokeColor: colorForLane(lane),
+        strokeColor,
         strokeOpacity: 0.85,
         strokeStyle: "solid"
       });
@@ -460,9 +501,73 @@ async function drawRouteOnMap(raw) {
     }
   }
 
-  if (pointCount > 0) {
+  return pointCount;
+}
+
+async function drawRouteOnMap(raw) {
+  if (!isMapReady || !map) return;
+  clearRouteOverlay();
+  const bounds = new kakao.maps.LatLngBounds();
+  const n = await appendPolylinesFromRaw(raw, strokeColorForTransitLane, bounds);
+  if (n > 0) {
     map.setBounds(bounds);
   }
+}
+
+async function redrawMapOverviewRoutes(item) {
+  if (!isMapReady || !map || !item?.perFriend?.length) return 0;
+  const bounds = new kakao.maps.LatLngBounds();
+  let totalPoints = 0;
+  const perFriend = item.perFriend;
+  for (let i = 0; i < perFriend.length; i += 1) {
+    const pf = perFriend[i];
+    const color = friendRouteColor(i);
+    const n = await appendPolylinesFromRaw(
+      pf?.route?.raw,
+      () => color,
+      bounds
+    );
+    totalPoints += n;
+  }
+  const c = item?.candidate;
+  if (c?.lat != null && c?.lng != null) {
+    bounds.extend(new kakao.maps.LatLng(c.lat, c.lng));
+  }
+  if (totalPoints > 0) {
+    map.setBounds(bounds);
+  }
+  return totalPoints;
+}
+
+function svgPinImageUrl(fillHex) {
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="44" viewBox="0 0 34 44">` +
+    `<path d="M17 0C7.6 0 0 7.3 0 16.3c0 10.4 13.3 26.7 16.1 30.1.5.7 1.6.7 2.1 0C20.7 43 34 26.7 34 16.3 34 7.3 26.4 0 17 0z" fill="${fillHex}"/>` +
+    `<circle cx="17" cy="16.5" r="6.2" fill="#fff" fill-opacity="0.95"/>` +
+    `</svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function addFriendOverviewPin(startPoint, friendName, colorHex) {
+  if (!isMapReady || !map) return;
+  if (!startPoint?.lat || !startPoint?.lng) return;
+  const pos = new kakao.maps.LatLng(startPoint.lat, startPoint.lng);
+  const pinImage = new kakao.maps.MarkerImage(
+    svgPinImageUrl(colorHex),
+    new kakao.maps.Size(34, 44),
+    { offset: new kakao.maps.Point(17, 44) }
+  );
+  const marker = new kakao.maps.Marker({ map, position: pos, image: pinImage });
+  const content = `<div class="markerLabel"><span class="markerDot" style="background:${colorHex}"></span>${escapeHtml(
+    friendName
+  )}</div>`;
+  const overlay = new kakao.maps.CustomOverlay({
+    map,
+    position: pos,
+    content,
+    yAnchor: 1.45
+  });
+  friendOverviewEntries.push({ marker, overlay });
 }
 
 function addRouteMarkers(startPoint, endPoint, labels) {
@@ -472,19 +577,10 @@ function addRouteMarkers(startPoint, endPoint, labels) {
   const startPos = new kakao.maps.LatLng(startPoint.lat, startPoint.lng);
   const endPos = new kakao.maps.LatLng(endPoint.lat, endPoint.lng);
 
-  const svgPin = (color) => {
-    const svg =
-      `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="44" viewBox="0 0 34 44">` +
-      `<path d="M17 0C7.6 0 0 7.3 0 16.3c0 10.4 13.3 26.7 16.1 30.1.5.7 1.6.7 2.1 0C20.7 43 34 26.7 34 16.3 34 7.3 26.4 0 17 0z" fill="${color}"/>` +
-      `<circle cx="17" cy="16.5" r="6.2" fill="#fff" fill-opacity="0.95"/>` +
-      `</svg>`;
-    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-  };
-
-  const startImage = new kakao.maps.MarkerImage(svgPin("#1E88E5"), new kakao.maps.Size(34, 44), {
+  const startImage = new kakao.maps.MarkerImage(svgPinImageUrl("#1E88E5"), new kakao.maps.Size(34, 44), {
     offset: new kakao.maps.Point(17, 44)
   });
-  const endImage = new kakao.maps.MarkerImage(svgPin("#8E24AA"), new kakao.maps.Size(34, 44), {
+  const endImage = new kakao.maps.MarkerImage(svgPinImageUrl("#8E24AA"), new kakao.maps.Size(34, 44), {
     offset: new kakao.maps.Point(17, 44)
   });
 
@@ -513,6 +609,8 @@ function addRouteMarkers(startPoint, endPoint, labels) {
 }
 
 async function openCandidateDetails(item, address) {
+  setFriendOverviewPinsVisible(false);
+
   sheetTitleEl.textContent = item?.candidate?.name ? `상세 경로 - ${item.candidate.name}` : "상세 경로";
   sheetSubtitleEl.textContent = address ? `주소: ${address}` : "";
 
@@ -526,19 +624,19 @@ async function openCandidateDetails(item, address) {
     friendSelectEl.appendChild(opt);
   });
 
-  const update = () => {
+  const update = async () => {
     const idx = Number(friendSelectEl.value || "0");
     const pf = perFriend?.[idx];
     const raw = pf?.route?.raw;
     renderPathList(summarizeOdsayPath(raw));
-    void drawRouteOnMap(raw);
+    await drawRouteOnMap(raw);
     addRouteMarkers(pf?.startPoint, item?.candidate, {
       startLabel: `🏃‍♂️ 출발(${pf?.friendName ?? "친구"})`,
       endLabel: `🚩 도착(${item?.candidate?.name ?? "중간지점"})`
     });
   };
-  friendSelectEl.onchange = update;
-  update();
+  friendSelectEl.onchange = () => void update();
+  await update();
 
   openSheet();
 }
@@ -570,7 +668,16 @@ async function renderTopCandidates(results) {
   infoWindows.push(infoWindow);
   infoWindow.open(map, marker);
   kakao.maps.event.addListener(marker, "click", () => infoWindow.open(map, marker));
-  kakao.maps.event.addListener(marker, "dblclick", () => openCandidateDetails(item, address));
+  kakao.maps.event.addListener(marker, "dblclick", () => void openCandidateDetails(item, address));
+
+  const perFriends = item?.perFriend ?? [];
+  perFriends.forEach((pf, i) => {
+    addFriendOverviewPin(
+      pf?.startPoint,
+      pf?.friendName ?? `친구${i + 1}`,
+      friendRouteColor(i)
+    );
+  });
 
   const card = document.createElement("div");
   card.className = "rounded-3xl border border-coral-100 bg-white p-4 shadow-softCard app-fade";
@@ -595,7 +702,7 @@ async function renderTopCandidates(results) {
     </div>
   `;
   card.querySelector('[data-action="details"]').addEventListener("click", () =>
-    openCandidateDetails(item, address)
+    void openCandidateDetails(item, address)
   );
   card.querySelector('[data-action="share"]').addEventListener("click", () =>
     shareTopCandidate(item, address, reasonText)
@@ -604,8 +711,18 @@ async function renderTopCandidates(results) {
   lastSharePayload = { item, address, reasonText };
   updateStickyShareButton();
 
-  fitBounds([item.candidate]);
-  mapStatusEl.textContent = "1순위 추천 지점과 선정 이유를 지도에 표시했습니다.";
+  lastOverviewItem = item;
+  mapStatusEl.textContent = "친구별 경로를 지도에 그리는 중...";
+  const polyPts = await redrawMapOverviewRoutes(item);
+  if (!polyPts) {
+    const pts = [];
+    if (item.candidate) pts.push(item.candidate);
+    perFriends.forEach((pf) => {
+      if (pf?.startPoint) pts.push(pf.startPoint);
+    });
+    if (pts.length) fitBounds(pts);
+  }
+  mapStatusEl.textContent = "1순위 추천, 친구별 경로·핀을 표시했습니다.";
 }
 
 function addFriendRow(name = "", address = "", addressPlaceholder = "ex. 신도림역") {
@@ -651,6 +768,7 @@ runBtn.addEventListener("click", async () => {
   resultEl.textContent = "중간지점 계산 중...";
   cardsEl.innerHTML = "";
   lastSharePayload = null;
+  lastOverviewItem = null;
   updateStickyShareButton();
   clearMapObjects();
   try {

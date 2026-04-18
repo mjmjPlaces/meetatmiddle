@@ -26,9 +26,10 @@ const url =
   `&EX=${ex}` +
   `&EY=${ey}` +
   `&apiKey=${apiKey}`;
+const maskedUrl = url.replace(/([?&]apiKey=)[^&]*/i, "$1***");
 
 console.log("[test-odsay] env", { apiKeyLength: apiKey.length });
-console.log("[test-odsay] url", url);
+console.log("[test-odsay] url", maskedUrl);
 
 try {
   const wh = odsayWebOriginHeaders();

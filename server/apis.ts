@@ -91,6 +91,11 @@ function mustEnv(name: string): string {
   return value;
 }
 
+/** Prevent leaking secrets when logs are shared externally. */
+function maskApiKeyInUrl(url: string): string {
+  return url.replace(/([?&]apiKey=)[^&]*/i, "$1***");
+}
+
 /** ODsay WEB 플랫폼 등록 도메인. 우선순위: ODSAY_WEB_ORIGIN → production일 때 기본 Vercel URL → 로컬 개발용 localhost */
 function odsayWebOriginHeaders(): { Origin: string; Referer: string } {
   const raw = process.env.ODSAY_WEB_ORIGIN?.trim().replace(/^["']|["']$/g, "") ?? "";
@@ -311,6 +316,7 @@ export async function getTransitRoute(
     `&EX=${encodeURIComponent(String(end.lng))}` +
     `&EY=${encodeURIComponent(String(end.lat))}` +
     `&apiKey=${encodeURIComponent(apiKey)}`;
+  const maskedRequestUrl = maskApiKeyInUrl(requestUrl);
   const webHeaders = odsayWebOriginHeaders();
   const requestConfig = {
     method: "GET",
@@ -329,7 +335,7 @@ export async function getTransitRoute(
       to: debugMeta?.toLabel ?? "unknown",
       start,
       end,
-      url: requestUrl,
+      url: maskedRequestUrl,
       config: requestConfig
     });
 
@@ -340,7 +346,7 @@ export async function getTransitRoute(
       console.error("[ODsay] network error", {
         attempt,
         config: requestConfig,
-        url: requestUrl,
+        url: maskedRequestUrl,
         error
       });
       if (attempt < MAX_ODSAY_RETRY) {
@@ -358,7 +364,7 @@ export async function getTransitRoute(
         statusText: res.statusText,
         data: responseText,
         config: requestConfig,
-        url: requestUrl
+        url: maskedRequestUrl
       });
       if (res.status === 429 && attempt < MAX_ODSAY_RETRY) {
         await sleep(attempt * 1200);

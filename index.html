@@ -4,7 +4,42 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#fff7f2" />
-    <title>중간지점 찾기</title>
+    <meta
+      name="description"
+      content="쌤밋 — 친구들과 만나기 좋은 중간 지점을 찾아드려요. 대중교통 기준으로 공정하게 추천합니다."
+    />
+    <meta name="application-name" content="쌤밋" />
+    <meta name="apple-mobile-web-app-title" content="쌤밋" />
+    <title>쌤밋 · 중간지점 찾기</title>
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="쌤밋" />
+    <meta property="og:title" content="쌤밋 · 중간지점 찾기" />
+    <meta
+      property="og:description"
+      content="친구들과 만나기 좋은 중간 지점을 찾아드려요. 대중교통 기준으로 공정하게 추천합니다."
+    />
+    <meta property="og:locale" content="ko_KR" />
+    <meta
+      property="og:image"
+      content="https://midpoint-navigator.vercel.app/og-image.png"
+    />
+    <meta
+      property="og:image:secure_url"
+      content="https://midpoint-navigator.vercel.app/og-image.png"
+    />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:alt" content="쌤밋 samemeet — 중간지점 찾기" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="쌤밋 · 중간지점 찾기" />
+    <meta
+      name="twitter:description"
+      content="친구들과 만나기 좋은 중간 지점을 찾아드려요. 대중교통 기준으로 공정하게 추천합니다."
+    />
+    <meta
+      name="twitter:image"
+      content="https://midpoint-navigator.vercel.app/og-image.png"
+    />
+    <meta name="twitter:image:alt" content="쌤밋 samemeet — 중간지점 찾기" />
     <link rel="preconnect" href="https://cdn.jsdelivr.net" />
     <link
       rel="stylesheet"
@@ -141,7 +176,8 @@
   <body class="min-h-screen text-slate-800">
     <div class="app-fade mx-auto w-full max-w-[480px] min-h-screen pb-28">
       <header class="px-4 pt-4 pb-2">
-        <h1 class="text-[22px] font-extrabold tracking-tight text-slate-800">중간지점 찾기</h1>
+        <p class="text-[11px] font-extrabold uppercase tracking-[0.2em] text-coral-500">SameMeet</p>
+        <h1 class="mt-0.5 text-[22px] font-extrabold tracking-tight text-slate-800">쌤밋 · 중간지점 찾기</h1>
         <p class="mt-1 text-[13px] text-slate-500">친구들과 딱 중간에서 만나기 ✨</p>
       </header>
 
@@ -215,7 +251,7 @@
     <div id="sheetBackdrop"></div>
     <div id="sheet" role="dialog" aria-modal="true" aria-label="경로 상세">
       <div
-        class="mx-auto w-full max-w-[480px] rounded-t-[28px] border border-coral-100 bg-white p-4 shadow-[0_-12px_30px_rgba(0,0,0,0.2)]"
+        class="mx-auto max-h-[min(52vh,420px)] w-full max-w-[480px] overflow-y-auto rounded-t-[28px] border border-coral-100 bg-white p-4 shadow-[0_-12px_30px_rgba(0,0,0,0.2)]"
       >
         <div id="sheetHeader" class="flex items-center justify-between gap-3 border-b border-coral-100 pb-3">
           <div>
