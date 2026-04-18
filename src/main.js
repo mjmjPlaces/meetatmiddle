@@ -41,7 +41,6 @@ function apiUrl(path) {
 let map;
 let geocoder;
 let markers = [];
-let infoWindows = [];
 let isMapReady = false;
 let mapInitTried = false;
 let pendingResultsForMap = null;
@@ -51,7 +50,8 @@ let routePolylines = [];
 let markersHiddenForSheet = false;
 let routeMarkers = [];
 let routeLabelOverlays = [];
-let reasonOverlays = [];
+/** 추천 지점 통합 카드(제목·주소·선정 이유 한 박스) */
+let candidateRecommendOverlay = null;
 let kakaoJsKey = "";
 let lastSharePayload = null;
 /** 상세 시트를 닫은 뒤 전체 경로를 다시 그릴 때 사용 */
@@ -201,15 +201,25 @@ function setFriendOverviewPinsVisible(visible) {
   });
 }
 
+function clearCandidateRecommendOverlay() {
+  if (candidateRecommendOverlay) {
+    candidateRecommendOverlay.setMap(null);
+    candidateRecommendOverlay = null;
+  }
+}
+
+function setCandidateRecommendOverlayVisible(visible) {
+  if (candidateRecommendOverlay) {
+    candidateRecommendOverlay.setMap(visible ? map : null);
+  }
+}
+
 function clearMapObjects() {
   clearRouteOverlay();
   clearFriendOverviewPins();
+  clearCandidateRecommendOverlay();
   markers.forEach((marker) => marker.setMap(null));
-  infoWindows.forEach((window) => window.close());
-  reasonOverlays.forEach((overlay) => overlay.setMap(null));
   markers = [];
-  infoWindows = [];
-  reasonOverlays = [];
 }
 
 function updateStickyShareButton() {
@@ -226,9 +236,6 @@ function updateStickyShareButton() {
 function setCandidateMarkersVisible(visible) {
   markersHiddenForSheet = !visible;
   markers.forEach((m) => m.setMap(visible ? map : null));
-  if (!visible) {
-    infoWindows.forEach((w) => w.close());
-  }
 }
 
 function clearRouteOverlay() {
@@ -258,15 +265,28 @@ function buildReasonSummary(item) {
   return "다수 이동시간 최적";
 }
 
-function addReasonOverlay(position, reasonText) {
-  const content = `<div class="reasonBadge"><span class="reasonDot"></span>${escapeHtml(reasonText)}</div>`;
-  const overlay = new kakao.maps.CustomOverlay({
+function addCandidateRecommendCard(position, { name, address, reasonText }) {
+  clearCandidateRecommendOverlay();
+  const html = `
+    <div class="mapRecommendCard">
+      <div class="mapRecommendKicker">추천 1순위</div>
+      <div class="mapRecommendTitle">${escapeHtml(name)}</div>
+      <div class="mapRecommendAddr">${escapeHtml(address)}</div>
+      <div class="mapRecommendDivider"></div>
+      <div class="mapRecommendReasonRow">
+        <span class="mapRecommendReasonDot" aria-hidden="true"></span>
+        <span class="mapRecommendReasonText">${escapeHtml(reasonText)}</span>
+      </div>
+    </div>
+  `;
+  candidateRecommendOverlay = new kakao.maps.CustomOverlay({
     map,
     position,
-    content,
-    yAnchor: 2.3
+    content: html,
+    xAnchor: 0.5,
+    yAnchor: 1,
+    zIndex: 5
   });
-  reasonOverlays.push(overlay);
 }
 
 async function shareTopCandidate(item, address, reasonText) {
@@ -385,6 +405,7 @@ function closeSheet() {
   clearRouteOverlay();
   if (markersHiddenForSheet) setCandidateMarkersVisible(true);
   setFriendOverviewPinsVisible(true);
+  setCandidateRecommendOverlayVisible(true);
   if (lastOverviewItem && isMapReady && map) {
     void redrawMapOverviewRoutes(lastOverviewItem);
   }
@@ -609,6 +630,7 @@ function addRouteMarkers(startPoint, endPoint, labels) {
 }
 
 async function openCandidateDetails(item, address) {
+  setCandidateRecommendOverlayVisible(false);
   setFriendOverviewPinsVisible(false);
 
   sheetTitleEl.textContent = item?.candidate?.name ? `상세 경로 - ${item.candidate.name}` : "상세 경로";
@@ -655,19 +677,8 @@ async function renderTopCandidates(results) {
   const position = new kakao.maps.LatLng(lat, lng);
   const marker = new kakao.maps.Marker({ map, position });
   markers.push(marker);
-  addReasonOverlay(position, reasonText);
+  addCandidateRecommendCard(position, { name, address, reasonText });
 
-  const infoHtml = `
-    <div style="padding:10px;max-width:min(92vw,300px);min-width:0;line-height:1.45;word-break:keep-all;">
-      <strong>추천 1순위: ${name}</strong><br />
-      <span>주소: ${address}</span><br />
-      <span style="color:#b7442a;font-weight:700;">${reasonText}</span>
-    </div>
-  `;
-  const infoWindow = new kakao.maps.InfoWindow({ content: infoHtml });
-  infoWindows.push(infoWindow);
-  infoWindow.open(map, marker);
-  kakao.maps.event.addListener(marker, "click", () => infoWindow.open(map, marker));
   kakao.maps.event.addListener(marker, "dblclick", () => void openCandidateDetails(item, address));
 
   const perFriends = item?.perFriend ?? [];
