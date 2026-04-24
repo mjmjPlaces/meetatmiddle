@@ -28,6 +28,7 @@ const stationPlaceholders = [
 
 /** Vercel은 정적 호스팅만 하고 API는 Railway에서 제공. 같은 호스트가 아니면 Railway URL로 직접 호출 (CORS는 ALLOWED_ORIGINS로 허용). */
 const RAILWAY_API_ORIGIN = "https://meetatmiddle-production.up.railway.app";
+const PUBLIC_SHARE_ORIGIN = "https://samemeet.com";
 
 function apiUrl(path) {
   const p = path.startsWith("/") ? path : `/${path}`;
@@ -344,37 +345,20 @@ function fromBase64Url(token) {
 }
 
 function buildShareUrls(payload) {
-  const base = `${window.location.origin}${window.location.pathname}`;
+  const host = window.location.hostname;
+  const isLocalHost =
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host.endsWith(".local");
+  const shareOrigin = isLocalHost ? PUBLIC_SHARE_ORIGIN : window.location.origin;
+  const base = `${shareOrigin}${window.location.pathname}`;
   const token = encodeURIComponent(toBase64Url(payload));
   const rootUrl = `${base}?share=${token}`;
   return {
     rootUrl,
     mapUrl: `${rootUrl}&view=map`,
     friendRouteUrl: `${rootUrl}&view=friends`
-  };
-}
-
-function compactRouteRaw(raw) {
-  const path0 = raw?.result?.path?.[0];
-  if (!path0) return undefined;
-  return {
-    result: {
-      path: [
-        {
-          info: {
-            mapObj: path0?.info?.mapObj || ""
-          },
-          subPath: (path0?.subPath ?? []).map((sub) => ({
-            trafficType: sub?.trafficType,
-            sectionTime: sub?.sectionTime,
-            lane: (sub?.lane ?? []).map((lane) => ({
-              name: lane?.name,
-              busNo: lane?.busNo
-            }))
-          }))
-        }
-      ]
-    }
   };
 }
 
@@ -398,8 +382,7 @@ function buildCompactSharePayload(item, address, reasonText) {
         startPoint: pf?.startPoint,
         route: {
           totalMinutes: pf?.route?.totalMinutes,
-          transferCount: pf?.route?.transferCount,
-          raw: compactRouteRaw(pf?.route?.raw)
+          transferCount: pf?.route?.transferCount
         }
       }))
     },
