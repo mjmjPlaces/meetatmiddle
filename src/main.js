@@ -428,7 +428,7 @@ function renderPathList(segments) {
   }
 }
 
-function renderFriendTimeList(perFriend) {
+function renderFriendTimeList(perFriend, selectedFriendId, onSelectFriend) {
   friendTimeListEl.innerHTML = "";
   if (!perFriend?.length) {
     const empty = document.createElement("div");
@@ -445,16 +445,29 @@ function renderFriendTimeList(perFriend) {
   sorted.forEach((pf) => {
     const minutes = Number(pf?.route?.totalMinutes ?? 0);
     const isLongest = minutes === maxMinutes && maxMinutes > 0;
+    const isSelected = pf?.friendId === selectedFriendId;
     const row = document.createElement("div");
-    row.className = `friendTimeItem${isLongest ? " friendTimeItemLongest" : ""}`;
+    row.className = `friendTimeItem${isLongest ? " friendTimeItemLongest" : ""}${
+      isSelected ? " friendTimeItemSelected" : ""
+    }`;
     row.innerHTML = `
       <div class="friendTimeLabel">${escapeHtml(pf.friendName)}${
-        isLongest ? '<span class="friendTimeBadge">최장</span>' : ""
+        isLongest ? '<span class="friendTimeBadge">(최장시간)</span>' : ""
       }</div>
       <div class="friendTimeValue">${pf?.route?.totalMinutes ?? "?"}분 (환승 ${
         pf?.route?.transferCount ?? "?"
       })</div>
     `;
+    row.tabIndex = 0;
+    row.role = "button";
+    row.setAttribute("aria-label", `${pf.friendName} 경로 선택`);
+    row.addEventListener("click", () => onSelectFriend?.(pf.friendId));
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        onSelectFriend?.(pf.friendId);
+      }
+    });
     friendTimeListEl.appendChild(row);
   });
 }
@@ -636,7 +649,7 @@ async function openCandidateDetails(item, address) {
   sheetSubtitleEl.textContent = address ? `주소: ${address}` : "";
 
   const perFriend = item?.perFriend ?? [];
-  renderFriendTimeList(perFriend);
+  let selectedFriendId = perFriend[0]?.friendId ?? "";
   friendSelectEl.innerHTML = "";
   perFriend.forEach((pf, idx) => {
     const opt = document.createElement("option");
@@ -644,11 +657,20 @@ async function openCandidateDetails(item, address) {
     opt.textContent = `${pf.friendName} (${pf.route?.totalMinutes ?? "?"}분)`;
     friendSelectEl.appendChild(opt);
   });
+  const indexByFriendId = new Map(perFriend.map((pf, idx) => [pf.friendId, idx]));
 
   const update = async () => {
-    const idx = Number(friendSelectEl.value || "0");
+    const idxFromId = indexByFriendId.get(selectedFriendId);
+    const idx = idxFromId != null ? idxFromId : Number(friendSelectEl.value || "0");
     const pf = perFriend?.[idx];
+    if (!pf) return;
+    selectedFriendId = pf.friendId;
+    friendSelectEl.value = String(idx);
     const raw = pf?.route?.raw;
+    renderFriendTimeList(perFriend, selectedFriendId, (friendId) => {
+      selectedFriendId = friendId;
+      void update();
+    });
     renderPathList(summarizeOdsayPath(raw));
     await drawRouteOnMap(raw);
     addRouteMarkers(pf?.startPoint, item?.candidate, {
@@ -656,7 +678,12 @@ async function openCandidateDetails(item, address) {
       endLabel: `🚩 도착(${item?.candidate?.name ?? "중간지점"})`
     });
   };
-  friendSelectEl.onchange = () => void update();
+  friendSelectEl.onchange = () => {
+    const idx = Number(friendSelectEl.value || "0");
+    const pf = perFriend[idx];
+    selectedFriendId = pf?.friendId ?? selectedFriendId;
+    void update();
+  };
   await update();
 
   openSheet();

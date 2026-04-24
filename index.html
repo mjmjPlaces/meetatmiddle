@@ -194,6 +194,37 @@
         line-height: 1.45;
         word-break: keep-all;
       }
+      .friendTimeItem {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid #f6d7c8;
+        background: #fffdfa;
+        cursor: pointer;
+      }
+      .friendTimeItemSelected {
+        border-color: #ffb899;
+        box-shadow: 0 0 0 2px rgba(255, 111, 79, 0.15) inset;
+      }
+      .friendTimeLabel {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 700;
+        color: #1e293b;
+      }
+      .friendTimeBadge {
+        color: #dc2626;
+        font-weight: 800;
+      }
+      .friendTimeValue {
+        font-size: 12px;
+        color: #64748b;
+        font-weight: 700;
+      }
       #sheetBackdrop {
         position: fixed;
         inset: 0;
@@ -208,6 +239,11 @@
         bottom: 0;
         display: none;
         z-index: 80;
+      }
+      #sheet > div {
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
       }
       @media (max-width: 720px) {
         input,
