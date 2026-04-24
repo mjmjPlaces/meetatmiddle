@@ -11,7 +11,6 @@ const sheetEl = document.getElementById("sheet");
 const sheetCloseEl = document.getElementById("sheetClose");
 const sheetTitleEl = document.getElementById("sheetTitle");
 const sheetSubtitleEl = document.getElementById("sheetSubtitle");
-const friendSelectEl = document.getElementById("friendSelect");
 const pathListEl = document.getElementById("pathList");
 const friendTimeListEl = document.getElementById("friendTimeList");
 const locateBtnEl = document.getElementById("locateBtn");
@@ -666,22 +665,14 @@ async function openCandidateDetails(item, address) {
 
   const perFriend = item?.perFriend ?? [];
   let selectedFriendId = perFriend[0]?.friendId ?? "";
-  friendSelectEl.innerHTML = "";
-  perFriend.forEach((pf, idx) => {
-    const opt = document.createElement("option");
-    opt.value = String(idx);
-    opt.textContent = `${pf.friendName} (${pf.route?.totalMinutes ?? "?"}분)`;
-    friendSelectEl.appendChild(opt);
-  });
   const indexByFriendId = new Map(perFriend.map((pf, idx) => [pf.friendId, idx]));
 
   const update = async () => {
     const idxFromId = indexByFriendId.get(selectedFriendId);
-    const idx = idxFromId != null ? idxFromId : Number(friendSelectEl.value || "0");
+    const idx = idxFromId != null ? idxFromId : 0;
     const pf = perFriend?.[idx];
     if (!pf) return;
     selectedFriendId = pf.friendId;
-    friendSelectEl.value = String(idx);
     const raw = pf?.route?.raw;
     renderFriendTimeList(perFriend, selectedFriendId, (friendId) => {
       selectedFriendId = friendId;
@@ -693,12 +684,6 @@ async function openCandidateDetails(item, address) {
       startLabel: `🏃‍♂️ 출발(${pf?.friendName ?? "친구"})`,
       endLabel: `🚩 도착(${item?.candidate?.name ?? "중간지점"})`
     });
-  };
-  friendSelectEl.onchange = () => {
-    const idx = Number(friendSelectEl.value || "0");
-    const pf = perFriend[idx];
-    selectedFriendId = pf?.friendId ?? selectedFriendId;
-    void update();
   };
   await update();
 
