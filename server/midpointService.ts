@@ -250,6 +250,7 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
       perFriend.push({
         friendId: friend.id,
         friendName: friend.name,
+        friendAddress: friend.address,
         startPoint: friend.point,
         route
       });

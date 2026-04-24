@@ -3,6 +3,8 @@ const addFriendBtn = document.getElementById("addFriend");
 const runBtn = document.getElementById("run");
 const resultEl = document.getElementById("result");
 const cardsEl = document.getElementById("cards");
+const searchPanelEl = document.getElementById("searchPanel");
+const backToSearchBtnEl = document.getElementById("backToSearch");
 const mapEl = document.getElementById("map");
 const mapWrapEl = document.getElementById("mapWrap");
 const mapStatusEl = document.getElementById("mapStatus");
@@ -245,6 +247,15 @@ function updateStickyShareButton() {
   stickyShareBtnEl.disabled = false;
 }
 
+function setSearchViewVisible(visible) {
+  if (searchPanelEl) {
+    searchPanelEl.style.display = visible ? "" : "none";
+  }
+  if (backToSearchBtnEl) {
+    backToSearchBtnEl.classList.toggle("hidden", visible);
+  }
+}
+
 function setCandidateMarkersVisible(visible) {
   markersHiddenForSheet = !visible;
   markers.forEach((m) => m.setMap(visible ? map : null));
@@ -465,10 +476,11 @@ function renderFriendTimeList(perFriend, selectedFriendId, onSelectFriend) {
     row.className = `friendTimeItem${isLongest ? " friendTimeItemLongest" : ""}${
       isSelected ? " friendTimeItemSelected" : ""
     }`;
+    const locationText = pf?.friendAddress ? `(${pf.friendAddress})` : "";
     row.innerHTML = `
       <div class="friendTimeLabel">${escapeHtml(pf.friendName)}${
         isLongest ? '<span class="friendTimeBadge">(최장시간)</span>' : ""
-      }</div>
+      }<span class="friendTimeLocation">${escapeHtml(locationText)}</span></div>
       <div class="friendTimeValue">${pf?.route?.totalMinutes ?? "?"}분 (환승 ${
         pf?.route?.transferCount ?? "?"
       })</div>
@@ -734,16 +746,12 @@ async function renderTopCandidates(results) {
     }
     <div class="mt-1 text-xs text-coral-600 font-bold">선정 이유: ${reasonText}</div>
     <div class="mt-1 text-xs text-slate-600">평균 ${Math.round(item.averageMinutes)}분 · 최대 ${Math.round(item.maxMinutes)}분</div>
-    <div class="mt-3 flex flex-wrap gap-2">
-      <button type="button" class="tap-press h-11 flex-1 rounded-2xl border border-coral-200 bg-coral-50 px-3 text-sm font-bold text-coral-600" data-action="details">세부 내용 조회</button>
-      <button type="button" class="tap-press h-11 flex-1 rounded-2xl border border-coral-200 bg-coral-50 px-3 text-sm font-bold text-coral-600" data-action="share">카카오톡 공유</button>
+    <div class="mt-3">
+      <button type="button" class="tap-press h-11 w-full rounded-2xl border border-coral-200 bg-coral-50 px-3 text-sm font-bold text-coral-600" data-action="details">세부 내용 조회</button>
     </div>
   `;
   card.querySelector('[data-action="details"]').addEventListener("click", () =>
     void openCandidateDetails(item, address)
-  );
-  card.querySelector('[data-action="share"]').addEventListener("click", () =>
-    shareTopCandidate(item, address, reasonText)
   );
   cardsEl.appendChild(card);
   lastSharePayload = { item, address, reasonText };
@@ -817,17 +825,35 @@ runBtn.addEventListener("click", async () => {
       resultEl.textContent = `계산 실패: ${data.error}`;
       return;
     }
+    const results = data.results ?? [];
+    if (results.length) {
+      setSearchViewVisible(false);
+    }
     resultEl.textContent = "중간지점 계산 완료.";
     if (isMapReady) {
-      await renderTopCandidates(data.results ?? []);
+      await renderTopCandidates(results);
     } else {
-      pendingResultsForMap = data.results ?? [];
+      pendingResultsForMap = results;
       mapStatusEl.textContent = "지도 SDK 준비 후 자동으로 마커를 표시합니다.";
     }
   } catch (error) {
     resultEl.textContent = `요청 실패: ${String(error)}`;
   }
 });
+
+if (backToSearchBtnEl) {
+  backToSearchBtnEl.addEventListener("click", () => {
+    closeSheet();
+    setSearchViewVisible(true);
+    cardsEl.innerHTML = "";
+    resultEl.textContent = "";
+    lastSharePayload = null;
+    lastOverviewItem = null;
+    updateStickyShareButton();
+    clearMapObjects();
+    mapStatusEl.textContent = "친구 정보를 입력하고 중간지점을 다시 계산해 주세요.";
+  });
+}
 
 sheetCloseEl.addEventListener("click", closeSheet);
 sheetBackdropEl.addEventListener("click", closeSheet);

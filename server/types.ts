@@ -28,6 +28,7 @@ export interface CandidateEvaluation {
   perFriend: Array<{
     friendId: string;
     friendName: string;
+    friendAddress?: string;
     startPoint: Point;
     route: RouteResult;
   }>;
