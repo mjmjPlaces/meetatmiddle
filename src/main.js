@@ -53,6 +53,7 @@ let routeLabelOverlays = [];
 let candidateRecommendOverlay = null;
 let kakaoJsKey = "";
 let lastSharePayload = null;
+let lastShareErrorDetail = "";
 /** 상세 시트를 닫은 뒤 전체 경로를 다시 그릴 때 사용 */
 let lastOverviewItem = null;
 /** 결과 화면에서 친구 출발지 핀(세부 경로 모드에서는 잠시 숨김) */
@@ -105,27 +106,40 @@ async function injectKakaoSdk() {
 }
 
 async function ensureKakaoShareReady() {
-  if (!kakaoJsKey) return false;
+  if (!kakaoJsKey) {
+    lastShareErrorDetail = "서버에서 KAKAO_JS_KEY를 내려주지 못했습니다.";
+    return false;
+  }
   if (window.Kakao?.isInitialized?.()) return true;
 
   if (!document.querySelector('script[data-kakao-share-sdk="1"]')) {
     const shareScript = document.createElement("script");
     shareScript.src = "https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js";
-    shareScript.integrity =
-      "sha384-DKYJsiAenoxQfQ3fU8XnY49ed41fR3kqwXdx4N4N6mErdlQ5fCHfY5mH8rquKy7L";
-    shareScript.crossOrigin = "anonymous";
     shareScript.dataset.kakaoShareSdk = "1";
     document.head.appendChild(shareScript);
-    await new Promise((resolve, reject) => {
+    const loaded = await new Promise((resolve) => {
       shareScript.onload = resolve;
-      shareScript.onerror = reject;
-    }).catch(() => null);
+      shareScript.onerror = () => resolve(false);
+    });
+    if (!loaded) {
+      lastShareErrorDetail = "카카오 공유 SDK 스크립트 로드에 실패했습니다.";
+      return false;
+    }
   }
 
-  if (!window.Kakao) return false;
-  if (!window.Kakao.isInitialized()) {
-    window.Kakao.init(kakaoJsKey);
+  if (!window.Kakao) {
+    lastShareErrorDetail = "window.Kakao 객체를 찾지 못했습니다.";
+    return false;
   }
+  if (!window.Kakao.isInitialized()) {
+    try {
+      window.Kakao.init(kakaoJsKey);
+    } catch (error) {
+      lastShareErrorDetail = `Kakao.init 실패: ${String(error)}`;
+      return false;
+    }
+  }
+  lastShareErrorDetail = "";
   return window.Kakao.isInitialized();
 }
 
@@ -291,7 +305,9 @@ function addCandidateRecommendCard(position, { name, address, reasonText }) {
 async function shareTopCandidate(item, address, reasonText) {
   const ready = await ensureKakaoShareReady();
   if (!ready) {
-    resultEl.textContent = "카카오 공유 SDK 초기화에 실패했습니다. KAKAO_JS_KEY 설정을 확인해 주세요.";
+    resultEl.textContent = `카카오 공유 SDK 초기화에 실패했습니다. ${
+      lastShareErrorDetail || "KAKAO_JS_KEY/카카오 Web 도메인 설정을 확인해 주세요."
+    }`;
     return;
   }
 
