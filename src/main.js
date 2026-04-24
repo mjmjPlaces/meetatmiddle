@@ -364,7 +364,8 @@ function fromBase64Url(token) {
 }
 
 function buildShareUrls(payload) {
-  const shareOrigin = isLocalLikeHost(window.location.hostname) ? PUBLIC_SHARE_ORIGIN : window.location.origin;
+  // Always publish Kakao share links to production domain for consistency.
+  const shareOrigin = PUBLIC_SHARE_ORIGIN;
   const base = `${shareOrigin}${window.location.pathname}`;
   const token = encodeURIComponent(toBase64Url(payload));
   const rootUrl = `${base}?share=${token}`;
@@ -887,10 +888,9 @@ async function shareTopCandidate(item, address, reasonText) {
   const avgText = `${Math.round(item?.averageMinutes ?? 0)}분`;
   const maxText = `${Math.round(item?.maxMinutes ?? 0)}분`;
   const destinationName = item?.candidate?.name ?? "추천 지점";
-  const sharePayload = buildCompactSharePayload(item, address, reasonText);
+  // Keep Kakao button links as compact and self-contained as possible.
   const tinyFallbackPayload = buildTinyShareFallbackPayload(item, address, reasonText);
-  const sid = await createShareSession(sharePayload);
-  const shareUrls = sid ? buildShareUrlsFromSid(sid, tinyFallbackPayload) : buildShareUrls(tinyFallbackPayload);
+  const shareUrls = buildShareUrls(tinyFallbackPayload);
   const mapOnlyUrl = `https://map.kakao.com/link/map/${encodeURIComponent(destinationName)},${item?.candidate?.lat},${item?.candidate?.lng}`;
 
   try {
