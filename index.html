@@ -130,6 +130,7 @@
       }
       /* 지도 위 추천 지점 요약(인포윈도우+이유 배지 통합) */
       .mapRecommendCard {
+        position: relative;
         width: min(280px, calc(100vw - 48px));
         padding: 12px 14px 12px;
         border-radius: 16px;
@@ -139,7 +140,73 @@
         font-family: "NanumSquare", "Noto Sans KR", sans-serif;
         line-height: 1.35;
         text-align: left;
-        transform: translateY(-8px);
+        transform: translate(
+          var(--recommend-drag-x, 0px),
+          calc(-8px + var(--recommend-drag-y, 0px))
+        );
+        cursor: grab;
+        user-select: none;
+        touch-action: none;
+      }
+      .mapRecommendCardRight::before {
+        content: "";
+        position: absolute;
+        left: -42px;
+        top: 14px;
+        width: 42px;
+        border-top: 2px dashed rgba(255, 111, 79, 0.9);
+      }
+      .mapRecommendCardLeft::before {
+        content: "";
+        position: absolute;
+        right: -42px;
+        top: 14px;
+        width: 42px;
+        border-top: 2px dashed rgba(255, 111, 79, 0.9);
+      }
+      .mapRecommendCardDragging {
+        cursor: grabbing;
+      }
+      .candidatePulseWrap {
+        width: 42px;
+        height: 42px;
+        position: relative;
+        transform: translate(-21px, -21px);
+        pointer-events: none;
+      }
+      .candidatePulseCore {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 12px;
+        height: 12px;
+        margin-left: -6px;
+        margin-top: -6px;
+        border-radius: 999px;
+        background: #ff6f4f;
+        box-shadow: 0 0 0 3px rgba(255, 111, 79, 0.35);
+      }
+      .candidatePulseRing {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 14px;
+        height: 14px;
+        margin-left: -7px;
+        margin-top: -7px;
+        border-radius: 999px;
+        border: 2px solid rgba(255, 111, 79, 0.65);
+        animation: candidatePulse 1.9s ease-out infinite;
+      }
+      @keyframes candidatePulse {
+        0% {
+          transform: scale(1);
+          opacity: 0.85;
+        }
+        100% {
+          transform: scale(2.6);
+          opacity: 0;
+        }
       }
       .mapRecommendKicker {
         font-size: 10px;
@@ -212,18 +279,32 @@
       .friendTimeLabel {
         display: flex;
         align-items: center;
-        gap: 6px;
+        justify-content: space-between;
+        gap: 10px;
+        flex: 1;
+        min-width: 0;
         font-weight: 700;
         color: #1e293b;
+      }
+      .friendTimeMain {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
       }
       .friendTimeLocation {
         margin-left: 8px;
         color: #111827;
         font-weight: 800;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .friendTimeBadge {
         color: #dc2626;
         font-weight: 800;
+        flex: 0 0 auto;
+        white-space: nowrap;
       }
       .friendTimeValue {
         font-size: 12px;

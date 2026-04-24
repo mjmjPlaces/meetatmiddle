@@ -52,6 +52,7 @@ let routeMarkers = [];
 let routeLabelOverlays = [];
 /** 추천 지점 통합 카드(제목·주소·선정 이유 한 박스) */
 let candidateRecommendOverlay = null;
+let candidatePulseOverlay = null;
 let kakaoJsKey = "";
 let lastSharePayload = null;
 let lastShareErrorDetail = "";
@@ -220,6 +221,10 @@ function clearCandidateRecommendOverlay() {
     candidateRecommendOverlay.setMap(null);
     candidateRecommendOverlay = null;
   }
+  if (candidatePulseOverlay) {
+    candidatePulseOverlay.setMap(null);
+    candidatePulseOverlay = null;
+  }
 }
 
 function setCandidateRecommendOverlayVisible(visible) {
@@ -288,10 +293,111 @@ function buildReasonSummary(item) {
   return "다수 이동시간 최적";
 }
 
-function addCandidateRecommendCard(position, { name, address, reasonText }) {
+function pickRecommendCardPlacement(candidate, perFriend) {
+  const friends = (perFriend ?? []).map((pf) => pf?.startPoint).filter(Boolean);
+  if (!candidate || !friends.length) {
+    return { side: "right", vertical: "down" };
+  }
+  const avgLat = friends.reduce((sum, p) => sum + p.lat, 0) / friends.length;
+  const avgLng = friends.reduce((sum, p) => sum + p.lng, 0) / friends.length;
+  return {
+    side: avgLng >= candidate.lng ? "left" : "right",
+    vertical: avgLat >= candidate.lat ? "down" : "up"
+  };
+}
+
+function enableRecommendCardDragging(cardId) {
+  const cardEl = document.getElementById(cardId);
+  if (!cardEl) return;
+
+  let dragX = 0;
+  let dragY = 0;
+  let pointerId = null;
+  let startClientX = 0;
+  let startClientY = 0;
+  let startX = 0;
+  let startY = 0;
+
+  const applyTransform = () => {
+    cardEl.style.setProperty("--recommend-drag-x", `${dragX}px`);
+    cardEl.style.setProperty("--recommend-drag-y", `${dragY}px`);
+  };
+
+  const onPointerDown = (event) => {
+    pointerId = event.pointerId;
+    startClientX = event.clientX;
+    startClientY = event.clientY;
+    startX = dragX;
+    startY = dragY;
+    cardEl.classList.add("mapRecommendCardDragging");
+    cardEl.setPointerCapture(pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const onPointerMove = (event) => {
+    if (pointerId == null || event.pointerId !== pointerId) return;
+    dragX = startX + (event.clientX - startClientX);
+    dragY = startY + (event.clientY - startClientY);
+    applyTransform();
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const onPointerUp = (event) => {
+    if (pointerId == null || event.pointerId !== pointerId) return;
+    cardEl.classList.remove("mapRecommendCardDragging");
+    cardEl.releasePointerCapture(pointerId);
+    pointerId = null;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  cardEl.addEventListener("pointerdown", onPointerDown);
+  cardEl.addEventListener("pointermove", onPointerMove);
+  cardEl.addEventListener("pointerup", onPointerUp);
+  cardEl.addEventListener("pointercancel", onPointerUp);
+  applyTransform();
+}
+
+function addCandidateHighlightPin(position) {
+  if (!isMapReady || !map) return null;
+  const pinImage = new kakao.maps.MarkerImage(
+    svgPinImageUrl("#ff6f4f"),
+    new kakao.maps.Size(34, 44),
+    { offset: new kakao.maps.Point(17, 44) }
+  );
+  const marker = new kakao.maps.Marker({
+    map,
+    position,
+    image: pinImage,
+    zIndex: 9
+  });
+  markers.push(marker);
+
+  const pulseHtml = `
+    <div class="candidatePulseWrap">
+      <span class="candidatePulseRing" aria-hidden="true"></span>
+      <span class="candidatePulseCore" aria-hidden="true"></span>
+    </div>
+  `;
+  candidatePulseOverlay = new kakao.maps.CustomOverlay({
+    map,
+    position,
+    content: pulseHtml,
+    xAnchor: 0.5,
+    yAnchor: 0.5,
+    zIndex: 8
+  });
+  return marker;
+}
+
+function addCandidateRecommendCard(position, { name, address, reasonText, placement }) {
   clearCandidateRecommendOverlay();
+  const cardId = `mapRecommendCard-${Date.now()}`;
+  const sideClass = placement?.side === "left" ? "mapRecommendCardLeft" : "mapRecommendCardRight";
   const html = `
-    <div class="mapRecommendCard">
+    <div id="${cardId}" class="mapRecommendCard ${sideClass}">
       <div class="mapRecommendKicker">추천 1순위</div>
       <div class="mapRecommendTitle">${escapeHtml(name)}</div>
       <div class="mapRecommendAddr">${escapeHtml(address)}</div>
@@ -302,14 +408,27 @@ function addCandidateRecommendCard(position, { name, address, reasonText }) {
       </div>
     </div>
   `;
+  const anchorByPlacement = {
+    rightDown: { xAnchor: -0.02, yAnchor: 1.32 },
+    leftDown: { xAnchor: 1.02, yAnchor: 1.32 },
+    rightUp: { xAnchor: -0.02, yAnchor: 0.12 },
+    leftUp: { xAnchor: 1.02, yAnchor: 0.12 }
+  };
+  const key = `${placement?.side === "left" ? "left" : "right"}${
+    placement?.vertical === "up" ? "Up" : "Down"
+  }`;
+  const anchor = anchorByPlacement[key] ?? anchorByPlacement.rightDown;
+
   candidateRecommendOverlay = new kakao.maps.CustomOverlay({
     map,
     position,
     content: html,
-    xAnchor: 0.5,
-    yAnchor: 1,
-    zIndex: 5
+    xAnchor: anchor.xAnchor,
+    yAnchor: anchor.yAnchor,
+    zIndex: 7,
+    clickable: true
   });
+  requestAnimationFrame(() => enableRecommendCardDragging(cardId));
 }
 
 async function shareTopCandidate(item, address, reasonText) {
@@ -478,9 +597,12 @@ function renderFriendTimeList(perFriend, selectedFriendId, onSelectFriend) {
     }`;
     const locationText = pf?.friendAddress ? `(${pf.friendAddress})` : "";
     row.innerHTML = `
-      <div class="friendTimeLabel">${escapeHtml(pf.friendName)}${
-        isLongest ? '<span class="friendTimeBadge">(최장시간)</span>' : ""
-      }<span class="friendTimeLocation">${escapeHtml(locationText)}</span></div>
+      <div class="friendTimeLabel">
+        <span class="friendTimeMain">${escapeHtml(pf.friendName)}<span class="friendTimeLocation">${escapeHtml(
+          locationText
+        )}</span></span>
+        ${isLongest ? '<span class="friendTimeBadge">(최장시간)</span>' : ""}
+      </div>
       <div class="friendTimeValue">${pf?.route?.totalMinutes ?? "?"}분 (환승 ${
         pf?.route?.transferCount ?? "?"
       })</div>
@@ -714,11 +836,12 @@ async function renderTopCandidates(results) {
   const reasonText = buildReasonSummary(item);
 
   const position = new kakao.maps.LatLng(lat, lng);
-  const marker = new kakao.maps.Marker({ map, position });
-  markers.push(marker);
-  addCandidateRecommendCard(position, { name, address, reasonText });
-
-  kakao.maps.event.addListener(marker, "dblclick", () => void openCandidateDetails(item, address));
+  const candidateMarker = addCandidateHighlightPin(position);
+  const placement = pickRecommendCardPlacement(item?.candidate, item?.perFriend);
+  addCandidateRecommendCard(position, { name, address, reasonText, placement });
+  if (candidateMarker) {
+    kakao.maps.event.addListener(candidateMarker, "dblclick", () => void openCandidateDetails(item, address));
+  }
 
   const perFriends = item?.perFriend ?? [];
   perFriends.forEach((pf, i) => {
