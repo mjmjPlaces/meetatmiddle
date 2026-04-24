@@ -161,8 +161,8 @@ function initMap() {
     mapStatusEl.textContent =
       "지도 준비 완료. (주소 변환 미사용) 마커를 표시할 수 있습니다.";
   }
-  if (pendingResultsForMap?.length) {
-    void renderTopCandidates(pendingResultsForMap);
+  if (pendingResultsForMap?.results?.length) {
+    void renderTopCandidates(pendingResultsForMap.results, pendingResultsForMap.options || {});
     pendingResultsForMap = null;
   }
 }
@@ -291,6 +291,48 @@ function buildReasonSummary(item) {
   if (max - min <= 15) return "이동시간 편차 최소";
   if (avg <= 40) return "평균 이동시간 우수";
   return "다수 이동시간 최적";
+}
+
+function toBase64Url(value) {
+  const encoded = new TextEncoder().encode(JSON.stringify(value));
+  let binary = "";
+  encoded.forEach((byte) => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+
+function fromBase64Url(token) {
+  const b64 = token.replaceAll("-", "+").replaceAll("_", "/");
+  const padded = `${b64}${"=".repeat((4 - (b64.length % 4 || 4)) % 4)}`;
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (ch) => ch.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function buildShareUrls(payload) {
+  const base = `${window.location.origin}${window.location.pathname}`;
+  const token = encodeURIComponent(toBase64Url(payload));
+  const rootUrl = `${base}?share=${token}`;
+  return {
+    rootUrl,
+    mapUrl: `${rootUrl}&view=map`,
+    friendRouteUrl: `${rootUrl}&view=friends`
+  };
+}
+
+function readShareStateFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get("share");
+  if (!token) return null;
+  try {
+    const payload = fromBase64Url(token);
+    if (!payload?.item?.candidate) return null;
+    const view = params.get("view");
+    return { payload, view };
+  } catch {
+    return null;
+  }
 }
 
 function pickRecommendCardPlacement(candidate, perFriend) {
@@ -446,27 +488,28 @@ async function shareTopCandidate(item, address, reasonText) {
   const avgText = `${Math.round(item?.averageMinutes ?? 0)}분`;
   const maxText = `${Math.round(item?.maxMinutes ?? 0)}분`;
   const destinationName = item?.candidate?.name ?? "추천 지점";
-  const mapUrl = `https://map.kakao.com/link/map/${encodeURIComponent(destinationName)},${item?.candidate?.lat},${item?.candidate?.lng}`;
+  const sharePayload = { item, address, reasonText };
+  const shareUrls = buildShareUrls(sharePayload);
 
   window.Kakao.Share.sendDefault({
     objectType: "feed",
     content: {
       title: `쌤밋 · 우리 모임 1순위 중간지점: ${destinationName}`,
       description: `${reasonText} · 평균 ${avgText} / 최대 ${maxText}\n${address}`,
-      imageUrl: "https://developers.kakao.com/assets/img/about/logos/kakaolink/kakaolink_btn_small.png",
+      imageUrl: "https://samemeet.com/samemeet-thumbnail.png",
       link: {
-        mobileWebUrl: mapUrl,
-        webUrl: mapUrl
+        mobileWebUrl: shareUrls.rootUrl,
+        webUrl: shareUrls.rootUrl
       }
     },
     buttons: [
       {
         title: "지도에서 보기",
-        link: { mobileWebUrl: mapUrl, webUrl: mapUrl }
+        link: { mobileWebUrl: shareUrls.mapUrl, webUrl: shareUrls.mapUrl }
       },
       {
-        title: "친구별 시간 보기",
-        link: { mobileWebUrl: mapUrl, webUrl: mapUrl }
+        title: "친구 별 경로 보기",
+        link: { mobileWebUrl: shareUrls.friendRouteUrl, webUrl: shareUrls.friendRouteUrl }
       }
     ],
     itemContent: {
@@ -824,7 +867,7 @@ async function openCandidateDetails(item, address) {
   openSheet();
 }
 
-async function renderTopCandidates(results) {
+async function renderTopCandidates(results, options = {}) {
   if (!isMapReady || !map) return;
   clearMapObjects();
   cardsEl.innerHTML = "";
@@ -832,7 +875,7 @@ async function renderTopCandidates(results) {
   const item = results[0];
   lastResults = [item];
   const { lat, lng, name } = item.candidate;
-  const address = await reverseGeocode(lat, lng);
+  const address = options?.preferredAddress || (await reverseGeocode(lat, lng));
   const reasonText = buildReasonSummary(item);
 
   const position = new kakao.maps.LatLng(lat, lng);
@@ -892,6 +935,9 @@ async function renderTopCandidates(results) {
     if (pts.length) fitBounds(pts);
   }
   mapStatusEl.textContent = "1순위 추천, 친구별 경로·핀을 표시했습니다.";
+  if (options?.autoOpenDetails) {
+    await openCandidateDetails(item, address);
+  }
 }
 
 function addFriendRow(name = "", address = "", addressPlaceholder = "ex. 신도림역") {
@@ -956,7 +1002,7 @@ runBtn.addEventListener("click", async () => {
     if (isMapReady) {
       await renderTopCandidates(results);
     } else {
-      pendingResultsForMap = results;
+      pendingResultsForMap = { results, options: {} };
       mapStatusEl.textContent = "지도 SDK 준비 후 자동으로 마커를 표시합니다.";
     }
   } catch (error) {
@@ -1011,3 +1057,19 @@ if (locateBtnEl) {
 }
 
 ensureMapReady();
+
+const sharedState = readShareStateFromQuery();
+if (sharedState?.payload?.item) {
+  setSearchViewVisible(false);
+  resultEl.textContent = "공유된 중간지점 결과를 불러왔습니다.";
+  const sharedOptions = {
+    preferredAddress: sharedState.payload.address || "",
+    autoOpenDetails: sharedState.view === "friends"
+  };
+  if (isMapReady) {
+    void renderTopCandidates([sharedState.payload.item], sharedOptions);
+  } else {
+    pendingResultsForMap = { results: [sharedState.payload.item], options: sharedOptions };
+    mapStatusEl.textContent = "공유 결과를 지도에 표시하는 중...";
+  }
+}
