@@ -871,8 +871,8 @@ async function shareTopCandidate(item, address, reasonText) {
   const maxText = `${Math.round(item?.maxMinutes ?? 0)}분`;
   const destinationName = item?.candidate?.name ?? "추천 지점";
   const sharePayload = buildCompactSharePayload(item, address, reasonText);
-  const sid = await createShareSession(sharePayload);
-  const shareUrls = sid ? buildShareUrlsFromSid(sid, sharePayload) : buildShareUrls(sharePayload);
+  // Use self-contained share links for Kakao buttons to avoid sid/cache mismatch on mobile.
+  const shareUrls = buildShareUrls(sharePayload);
   const mapOnlyUrl = `https://map.kakao.com/link/map/${encodeURIComponent(destinationName)},${item?.candidate?.lat},${item?.candidate?.lng}`;
 
   try {
