@@ -5,9 +5,10 @@ import {
   makeCandidateGrid,
   searchSubwayStationCandidates
 } from "./apis.js";
-import { scoreBalanced, scoreMajority } from "./scoring.js";
+import { scoreBalanced } from "./scoring.js";
 import {
   getCanonicalMasterName,
+  getCommerceHubByName,
   getShiftTargetName,
   getStationTierByName
 } from "./constants/station_master.js";
@@ -71,6 +72,29 @@ function priorityAdjustedRoughScore(candidate: CandidatePoint, baseScore: number
   if (candidate.tier === 1) return baseScore - 0.08;
   if (candidate.tier === 2) return baseScore - 0.04;
   return baseScore - 0.015;
+}
+
+function commerceScaleBonus(candidateName: string): number {
+  const hub = getCommerceHubByName(candidateName);
+  if (!hub) return 0;
+  const trafficWeight: Record<string, number> = {
+    very_high: 1.2,
+    high: 0.8,
+    medium: 0.4,
+    low: 0
+  };
+  const gradeWeight: Record<string, number> = {
+    S: 1.2,
+    A: 0.7,
+    B: 0.3
+  };
+  return (
+    hub.connectivity * 0.25 +
+    hub.psychological * 0.2 +
+    hub.vibeScore * 0.2 +
+    (trafficWeight[hub.eveningTraffic] ?? 0) +
+    (gradeWeight[hub.commerceGrade] ?? 0)
+  );
 }
 
 function applyPriorityCandidateMeta(candidates: CandidatePoint[]): CandidatePoint[] {
@@ -137,8 +161,6 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
   const configuredRefineCandidates = req.options?.refineCandidates ?? 6;
   const maxApiCalls = req.options?.maxApiCalls ?? 80;
   const transferPenalty = req.options?.transferPenalty ?? 8;
-  const outlierWeight = req.options?.outlierWeight ?? 0.5;
-  const reducedOutlierCount = req.options?.reducedOutlierCount ?? 1;
   const topN = req.options?.topN ?? 3;
   const farMinutesThreshold = 65;
   const expressBusBonus = 8;
@@ -232,26 +254,10 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
         route
       });
 
-      if (req.mode === "balanced") {
-        const currentMax = Math.max(...perFriend.map((p) => p.route.totalMinutes));
-        if (currentMax >= bestScore) {
-          shouldSkipCandidate = true;
-          break;
-        }
-      } else {
-        const sorted = perFriend
-          .map((p) => p.route.totalMinutes + p.route.transferCount * transferPenalty)
-          .sort((a, b) => b - a);
-        const partialWeightedSum = sorted
-          .map((minutes, idx) =>
-            idx < reducedOutlierCount ? minutes * outlierWeight : minutes
-          )
-          .reduce((a, b) => a + b, 0);
-        const optimisticLowerBound = partialWeightedSum / friendPoints.length;
-        if (optimisticLowerBound >= bestScore) {
-          shouldSkipCandidate = true;
-          break;
-        }
+      const currentMax = Math.max(...perFriend.map((p) => p.route.totalMinutes));
+      if (currentMax >= bestScore) {
+        shouldSkipCandidate = true;
+        break;
       }
     }
 
@@ -269,10 +275,7 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
       maxMinutes: max
     };
 
-    evaluation.score =
-      req.mode === "balanced"
-        ? scoreBalanced(evaluation, { transferPenalty, outlierWeight, reducedOutlierCount })
-        : scoreMajority(evaluation, { transferPenalty, outlierWeight, reducedOutlierCount });
+    evaluation.score = scoreBalanced(evaluation, { transferPenalty });
 
     if (!evaluation.candidate.isPriority) {
       evaluation.score += 10;
@@ -283,6 +286,7 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
     } else if (evaluation.candidate.tier === 3) {
       evaluation.score -= 1.5;
     }
+    evaluation.score -= commerceScaleBonus(evaluation.candidate.name);
 
     const farRoutes = evaluation.perFriend.filter((p) => p.route.totalMinutes >= farMinutesThreshold);
     if (farRoutes.length > 0) {

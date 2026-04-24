@@ -1,7 +1,6 @@
 ﻿const friendsEl = document.getElementById("friends");
 const addFriendBtn = document.getElementById("addFriend");
 const runBtn = document.getElementById("run");
-const modeEl = document.getElementById("mode");
 const resultEl = document.getElementById("result");
 const cardsEl = document.getElementById("cards");
 const mapEl = document.getElementById("map");
@@ -765,14 +764,11 @@ runBtn.addEventListener("click", async () => {
     .filter((f) => f.address.length > 0);
 
   const payload = {
-    mode: modeEl.value,
     friends,
     options: {
       topN: 3,
       maxCandidates: 12,
-      transferPenalty: 8,
-      outlierWeight: 0.5,
-      reducedOutlierCount: 1
+      transferPenalty: 8
     }
   };
 

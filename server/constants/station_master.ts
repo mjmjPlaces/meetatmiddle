@@ -33,6 +33,10 @@ const masterNameByNormalized = new Map(
   STATION_MASTERS.map((station) => [normalizeStationName(station.name), station.name])
 );
 
+const hubByNormalized = new Map(
+  COMMERCE_HUBS.map((hub) => [normalizeStationName(hub.name), hub])
+);
+
 // Non-priority stations are shifted to verified nearby hubs.
 const SHIFT_TARGETS: Record<string, string> = {
   남태령: "사당역",
@@ -50,6 +54,10 @@ const SHIFT_TARGETS: Record<string, string> = {
 
 export function getCanonicalMasterName(name: string): string | undefined {
   return masterNameByNormalized.get(normalizeStationName(name));
+}
+
+export function getCommerceHubByName(name: string) {
+  return hubByNormalized.get(normalizeStationName(name));
 }
 
 export function getShiftTargetName(name: string): string | undefined {

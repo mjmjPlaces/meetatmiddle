@@ -1,5 +1,3 @@
-export type Mode = "balanced" | "majority";
-
 export interface FriendInput {
   id: string;
   name: string;
@@ -39,7 +37,6 @@ export interface CandidateEvaluation {
 }
 
 export interface MidpointRequest {
-  mode: Mode;
   friends: FriendInput[];
   options?: {
     topN?: number;
@@ -47,7 +44,5 @@ export interface MidpointRequest {
     refineCandidates?: number;
     maxApiCalls?: number;
     transferPenalty?: number;
-    outlierWeight?: number;
-    reducedOutlierCount?: number;
   };
 }
