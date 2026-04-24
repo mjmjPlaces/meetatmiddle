@@ -18,7 +18,11 @@ export const STATION_MASTERS: StationMaster[] = COMMERCE_HUBS.map((h) => ({
 }));
 
 function normalizeStationName(name: string): string {
-  return name.replace(/\s+/g, "").replace(/역$/, "");
+  return name
+    .replace(/\s+/g, "")
+    .replace(/\(.*?\)/g, "")
+    .replace(/\d+호선/g, "")
+    .replace(/역$/, "");
 }
 
 const masterTierByName = new Map(

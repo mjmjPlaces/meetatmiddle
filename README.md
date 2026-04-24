@@ -128,6 +128,20 @@ npm install
 npm run dev
 ```
 
+## SHIFT A/B 회귀 체크
+`ENABLE_SHIFT_TARGETS`를 켰을 때/껐을 때 결과 품질이 급격히 흔들리는지 자동 확인합니다.
+
+1. 실행:
+   - `npm run test:ab-shift`
+2. 산출물:
+   - `docs/ab-shift-report.latest.json`
+3. 판정 기준(기본):
+   - Top1 변경 케이스 수 <= 1
+   - Top1 평균시간 차이 <= 6분
+   - Top1 점수 차이 <= 12
+
+> 기준은 서비스 운영 데이터에 맞춰 점진적으로 조정하세요.
+
 ## API 사용 예시
 `POST /api/midpoint`
 

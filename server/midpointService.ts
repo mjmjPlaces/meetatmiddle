@@ -36,6 +36,16 @@ function centroid(points: Point[]): Point {
   return { lat, lng };
 }
 
+function haversineMeters(a: Point, b: Point): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.min(1, Math.sqrt(x)));
+}
+
 function roughDistanceScore(candidate: CandidatePoint, points: Point[]): number {
   const distances = points.map((p) => {
     const dx = p.lng - candidate.lng;
@@ -97,6 +107,55 @@ function commerceScaleBonus(candidateName: string): number {
   );
 }
 
+function isShiftTargetsEnabled(): boolean {
+  const raw = (process.env.ENABLE_SHIFT_TARGETS ?? "true").trim().toLowerCase();
+  return !(raw === "false" || raw === "0" || raw === "off");
+}
+
+function representativeScore(candidate: CandidatePoint, points: Point[]): number {
+  const rough = roughDistanceScore(candidate, points);
+  const tierBonus =
+    candidate.tier === 1 ? 0.08 : candidate.tier === 2 ? 0.04 : candidate.tier === 3 ? 0.015 : -0.03;
+  return rough - tierBonus - commerceScaleBonus(candidate.name) * 0.005;
+}
+
+function clusterNearbyCandidates(
+  candidates: CandidatePoint[],
+  points: Point[],
+  radiusM = 850
+): CandidatePoint[] {
+  const clusters: CandidatePoint[][] = [];
+
+  for (const candidate of candidates) {
+    let targetCluster: CandidatePoint[] | null = null;
+    for (const cluster of clusters) {
+      const hasNearby = cluster.some((existing) => haversineMeters(existing, candidate) <= radiusM);
+      if (hasNearby) {
+        targetCluster = cluster;
+        break;
+      }
+    }
+    if (targetCluster) {
+      targetCluster.push(candidate);
+    } else {
+      clusters.push([candidate]);
+    }
+  }
+
+  return clusters.map((cluster) => {
+    const sorted = [...cluster].sort((a, b) => representativeScore(a, points) - representativeScore(b, points));
+    const selected = sorted[0];
+    if (cluster.length <= 1) return selected;
+    const shiftedFrom = cluster
+      .filter((c) => c.id !== selected.id)
+      .map((c) => c.name)
+      .slice(0, 3)
+      .join(", ");
+    if (!shiftedFrom) return selected;
+    return { ...selected, shiftedFrom };
+  });
+}
+
 function applyPriorityCandidateMeta(candidates: CandidatePoint[]): CandidatePoint[] {
   return candidates.map((candidate) => {
     const tier = getStationTierByName(candidate.name);
@@ -109,6 +168,9 @@ function applyPriorityCandidateMeta(candidates: CandidatePoint[]): CandidatePoin
 }
 
 async function shiftNonPriorityCandidates(candidates: CandidatePoint[]): Promise<CandidatePoint[]> {
+  if (!isShiftTargetsEnabled()) {
+    return candidates;
+  }
   const output: CandidatePoint[] = [];
   const seen = new Map<string, CandidatePoint>();
 
@@ -205,7 +267,11 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
   const rawCandidates =
     subwayCandidates.length > 0 ? subwayCandidates : makeCandidateGrid(center, maxCandidates);
   const candidatesWithMeta = applyPriorityCandidateMeta(rawCandidates);
-  const candidates = await shiftNonPriorityCandidates(candidatesWithMeta);
+  const clusteredCandidates = clusterNearbyCandidates(
+    candidatesWithMeta,
+    friendPoints.map((f) => f.point)
+  );
+  const candidates = await shiftNonPriorityCandidates(clusteredCandidates);
   if (subwayCandidates.length === 0) {
     console.warn("[Midpoint] no subway station candidates from Kakao, fallback to grid");
   }

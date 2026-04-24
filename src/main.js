@@ -53,6 +53,7 @@ let routeLabelOverlays = [];
 /** 추천 지점 통합 카드(제목·주소·선정 이유 한 박스) */
 let candidateRecommendOverlay = null;
 let candidatePulseOverlay = null;
+let recommendOverlayIdleHandler = null;
 let kakaoJsKey = "";
 let lastSharePayload = null;
 let lastShareErrorDetail = "";
@@ -217,6 +218,10 @@ function setFriendOverviewPinsVisible(visible) {
 }
 
 function clearCandidateRecommendOverlay() {
+  if (recommendOverlayIdleHandler && map && window.kakao?.maps?.event?.removeListener) {
+    kakao.maps.event.removeListener(map, "idle", recommendOverlayIdleHandler);
+    recommendOverlayIdleHandler = null;
+  }
   if (candidateRecommendOverlay) {
     candidateRecommendOverlay.setMap(null);
     candidateRecommendOverlay = null;
@@ -243,7 +248,8 @@ function clearMapObjects() {
 
 function updateStickyShareButton() {
   if (!stickyShareBtnEl) return;
-  if (!lastSharePayload) {
+  const isSheetOpen = sheetEl?.style?.display === "block";
+  if (!lastSharePayload || isSheetOpen) {
     stickyShareBtnEl.classList.add("hidden");
     stickyShareBtnEl.disabled = true;
     return;
@@ -277,9 +283,6 @@ function clearRouteOverlay() {
 
 function buildReasonSummary(item) {
   const routes = item?.perFriend ?? [];
-  if (item?.candidate?.tier) {
-    return `검증된 약속장소 Tier ${item.candidate.tier}`;
-  }
   if (!routes.length) return "이동시간 균형 우수";
   const allZeroTransfer = routes.every((r) => Number(r?.route?.transferCount ?? 0) === 0);
   if (allZeroTransfer) return "모두 환승 0회";
@@ -291,6 +294,36 @@ function buildReasonSummary(item) {
   if (max - min <= 15) return "이동시간 편차 최소";
   if (avg <= 40) return "평균 이동시간 우수";
   return "다수 이동시간 최적";
+}
+
+function recommendationStrengthLabel(tier) {
+  if (tier === 1) return "아주 추천";
+  if (tier === 2) return "추천";
+  return "무난";
+}
+
+function suitabilityLabel(tier, isPriority) {
+  if (tier === 1 || tier === 2) return "높음";
+  if (tier === 3 || isPriority) return "보통";
+  return "참고";
+}
+
+function hotplaceAccessibilityLabel(item) {
+  const tier = item?.candidate?.tier;
+  const spread = Math.round((item?.maxMinutes ?? 0) - (item?.averageMinutes ?? 0));
+  if (tier === 1) return "상권 활발";
+  if (spread <= 10) return "균형형";
+  if (tier === 2 || tier === 3) return "접근성 좋음";
+  return "균형형";
+}
+
+function meetingIndexScore(item) {
+  const avg = Number(item?.averageMinutes ?? 0);
+  const max = Number(item?.maxMinutes ?? 0);
+  const spreadPenalty = Math.max(0, max - avg) * 0.9;
+  const tierBoost = item?.candidate?.tier === 1 ? 8 : item?.candidate?.tier === 2 ? 5 : item?.candidate?.tier === 3 ? 2 : 0;
+  const raw = 100 - avg * 0.7 - spreadPenalty + tierBoost;
+  return Math.max(35, Math.min(98, Math.round(raw)));
 }
 
 function toBase64Url(value) {
@@ -348,58 +381,318 @@ function pickRecommendCardPlacement(candidate, perFriend) {
   };
 }
 
-function enableRecommendCardDragging(cardId) {
-  const cardEl = document.getElementById(cardId);
+function projectPointToViewport(point) {
+  const projection = map?.getProjection?.();
+  if (!projection?.containerPointFromCoords || !mapEl || !point) return null;
+  const containerPoint = projection.containerPointFromCoords(new kakao.maps.LatLng(point.lat, point.lng));
+  const mapRect = mapEl.getBoundingClientRect();
+  return {
+    x: mapRect.left + containerPoint.x,
+    y: mapRect.top + containerPoint.y
+  };
+}
+
+function computeRecommendCardOffset(cardEl, pinPoint, avoidancePoints = []) {
+  if (!cardEl || !mapEl) return { x: 0, y: 0 };
+  const baseRect = cardEl.getBoundingClientRect();
+  const mapRect = mapEl.getBoundingClientRect();
+  const cardW = baseRect.width || 260;
+  const cardH = baseRect.height || 120;
+  const margin = 12;
+
+  const projectedAvoids = avoidancePoints.map(projectPointToViewport).filter(Boolean);
+  const projectedPin = projectPointToViewport(pinPoint);
+  if (!projectedPin) return { x: 0, y: 0 };
+
+  const options = [
+    { x: 0, y: 0 },
+    { x: 0, y: 84 },
+    { x: 120, y: 62 },
+    { x: -120, y: 62 },
+    { x: 160, y: -18 },
+    { x: -160, y: -18 },
+    { x: 0, y: -96 },
+    { x: 196, y: 96 },
+    { x: -196, y: 96 },
+    { x: 220, y: -88 },
+    { x: -220, y: -88 }
+  ];
+
+  let best = options[0];
+  let bestScore = Number.POSITIVE_INFINITY;
+  options.forEach((opt, index) => {
+    const rect = {
+      left: baseRect.left + opt.x,
+      right: baseRect.left + opt.x + cardW,
+      top: baseRect.top + opt.y,
+      bottom: baseRect.top + opt.y + cardH
+    };
+    let score = index * 2;
+
+    if (rect.left < mapRect.left + margin) score += (mapRect.left + margin - rect.left) * 3.5;
+    if (rect.right > mapRect.right - margin) score += (rect.right - (mapRect.right - margin)) * 3.5;
+    if (rect.top < mapRect.top + margin) score += (mapRect.top + margin - rect.top) * 2.5;
+    if (rect.bottom > mapRect.bottom - margin) score += (rect.bottom - (mapRect.bottom - margin)) * 3.5;
+
+    projectedAvoids.forEach((pt) => {
+      const overlapMargin = 18;
+      const inX = pt.x >= rect.left - overlapMargin && pt.x <= rect.right + overlapMargin;
+      const inY = pt.y >= rect.top - overlapMargin && pt.y <= rect.bottom + overlapMargin;
+      if (inX && inY) score += 1200;
+    });
+
+    const cardCenterX = (rect.left + rect.right) / 2;
+    const cardCenterY = (rect.top + rect.bottom) / 2;
+    const pinDistance = Math.hypot(cardCenterX - projectedPin.x, cardCenterY - projectedPin.y);
+    score += Math.abs(pinDistance - 170) * 0.45;
+
+    if (score < bestScore) {
+      bestScore = score;
+      best = opt;
+    }
+  });
+  // Final hard clamp: always keep the card inside map viewport.
+  const clamped = { ...best };
+  const finalRect = {
+    left: baseRect.left + clamped.x,
+    right: baseRect.left + clamped.x + cardW,
+    top: baseRect.top + clamped.y,
+    bottom: baseRect.top + clamped.y + cardH
+  };
+  if (finalRect.left < mapRect.left + margin) {
+    clamped.x += mapRect.left + margin - finalRect.left;
+  }
+  if (finalRect.right > mapRect.right - margin) {
+    clamped.x -= finalRect.right - (mapRect.right - margin);
+  }
+  if (finalRect.top < mapRect.top + margin) {
+    clamped.y += mapRect.top + margin - finalRect.top;
+  }
+  if (finalRect.bottom > mapRect.bottom - margin) {
+    clamped.y -= finalRect.bottom - (mapRect.bottom - margin);
+  }
+  return clamped;
+}
+
+function enableRecommendCardDragging(cardOrId, placement = {}, position = null, initialOffset = null) {
+  const cardEl =
+    typeof cardOrId === "string" ? document.getElementById(cardOrId) : cardOrId;
   if (!cardEl) return;
 
-  let dragX = 0;
-  let dragY = 0;
+  let dragX = Number(initialOffset?.x ?? 0);
+  let dragY = Number(initialOffset?.y ?? 0);
+  let renderedX = 0;
+  let renderedY = 0;
   let pointerId = null;
+  let dragging = false;
+  let animationFrameId = 0;
   let startClientX = 0;
   let startClientY = 0;
   let startX = 0;
   let startY = 0;
+  const connectorEl = cardEl.querySelector(".mapRecommendConnector");
+
+  const updateConnector = () => {
+    if (!connectorEl) return;
+    const cardRect = cardEl.getBoundingClientRect();
+    const cardWidth = cardRect.width || 260;
+    const cardHeight = cardRect.height || 120;
+
+    const projection = map?.getProjection?.();
+    const pinPoint =
+      position && projection?.containerPointFromCoords
+        ? projection.containerPointFromCoords(position)
+        : null;
+    if (!pinPoint || !mapEl) return;
+    const mapRect = mapEl.getBoundingClientRect();
+    const pinXGlobal = mapRect.left + pinPoint.x;
+    const pinYGlobal = mapRect.top + pinPoint.y;
+
+    const cardCenterX = cardRect.left + cardWidth / 2;
+    const cardCenterY = cardRect.top + cardHeight / 2;
+    const vx = pinXGlobal - cardCenterX;
+    const vy = pinYGlobal - cardCenterY;
+    const halfW = cardWidth / 2;
+    const halfH = cardHeight / 2;
+    const scaleX = Math.abs(vx) > 0.0001 ? halfW / Math.abs(vx) : Number.POSITIVE_INFINITY;
+    const scaleY = Math.abs(vy) > 0.0001 ? halfH / Math.abs(vy) : Number.POSITIVE_INFINITY;
+    const scale = Math.min(scaleX, scaleY);
+    const edgeX = cardCenterX + vx * scale;
+    const edgeY = cardCenterY + vy * scale;
+
+    const attachXLocal = edgeX - cardRect.left;
+    const attachYLocal = edgeY - cardRect.top;
+
+    const attachXGlobal = cardRect.left + attachXLocal;
+    const attachYGlobal = cardRect.top + attachYLocal;
+    const dx = pinXGlobal - attachXGlobal;
+    const dy = pinYGlobal - attachYGlobal;
+    const length = Math.max(8, Math.hypot(dx, dy));
+    const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+    connectorEl.style.left = `${attachXLocal}px`;
+    connectorEl.style.top = `${attachYLocal}px`;
+    connectorEl.style.width = `${length}px`;
+    connectorEl.style.transform = `rotate(${angleDeg}deg)`;
+  };
+
+  const renderFrame = () => {
+    const easing = dragging ? 0.32 : 0.22;
+    renderedX += (dragX - renderedX) * easing;
+    renderedY += (dragY - renderedY) * easing;
+    if (Math.abs(dragX - renderedX) < 0.2) renderedX = dragX;
+    if (Math.abs(dragY - renderedY) < 0.2) renderedY = dragY;
+    cardEl.style.setProperty("--recommend-drag-x", `${renderedX}px`);
+    cardEl.style.setProperty("--recommend-drag-y", `${renderedY}px`);
+    updateConnector();
+    if (renderedX !== dragX || renderedY !== dragY) {
+      animationFrameId = requestAnimationFrame(renderFrame);
+    } else {
+      animationFrameId = 0;
+    }
+  };
 
   const applyTransform = () => {
-    cardEl.style.setProperty("--recommend-drag-x", `${dragX}px`);
-    cardEl.style.setProperty("--recommend-drag-y", `${dragY}px`);
+    if (!animationFrameId) {
+      animationFrameId = requestAnimationFrame(renderFrame);
+    }
+  };
+
+  const keepCardInsideMap = () => {
+    if (!mapEl) return;
+    const margin = 12;
+    const mapRect = mapEl.getBoundingClientRect();
+    const cardRect = cardEl.getBoundingClientRect();
+    let nextX = dragX;
+    let nextY = dragY;
+    if (cardRect.left < mapRect.left + margin) nextX += mapRect.left + margin - cardRect.left;
+    if (cardRect.right > mapRect.right - margin) nextX -= cardRect.right - (mapRect.right - margin);
+    if (cardRect.top < mapRect.top + margin) nextY += mapRect.top + margin - cardRect.top;
+    if (cardRect.bottom > mapRect.bottom - margin) nextY -= cardRect.bottom - (mapRect.bottom - margin);
+    if (nextX !== dragX || nextY !== dragY) {
+      dragX = nextX;
+      dragY = nextY;
+      applyTransform();
+    }
+  };
+
+  const beginDrag = (clientX, clientY) => {
+    dragging = true;
+    startClientX = clientX;
+    startClientY = clientY;
+    startX = dragX;
+    startY = dragY;
+    cardEl.classList.add("mapRecommendCardDragging");
+    map?.setDraggable?.(false);
+  };
+
+  const moveDrag = (clientX, clientY) => {
+    if (!dragging) return;
+    dragX = startX + (clientX - startClientX);
+    dragY = startY + (clientY - startClientY);
+    applyTransform();
+  };
+
+  const endDrag = () => {
+    if (!dragging) return;
+    dragging = false;
+    cardEl.classList.remove("mapRecommendCardDragging");
+    map?.setDraggable?.(true);
+    pointerId = null;
   };
 
   const onPointerDown = (event) => {
     pointerId = event.pointerId;
-    startClientX = event.clientX;
-    startClientY = event.clientY;
-    startX = dragX;
-    startY = dragY;
-    cardEl.classList.add("mapRecommendCardDragging");
-    cardEl.setPointerCapture(pointerId);
+    beginDrag(event.clientX, event.clientY);
+    if (cardEl.setPointerCapture) {
+      cardEl.setPointerCapture(pointerId);
+    }
     event.preventDefault();
     event.stopPropagation();
   };
 
   const onPointerMove = (event) => {
     if (pointerId == null || event.pointerId !== pointerId) return;
-    dragX = startX + (event.clientX - startClientX);
-    dragY = startY + (event.clientY - startClientY);
-    applyTransform();
+    moveDrag(event.clientX, event.clientY);
     event.preventDefault();
     event.stopPropagation();
   };
 
   const onPointerUp = (event) => {
     if (pointerId == null || event.pointerId !== pointerId) return;
-    cardEl.classList.remove("mapRecommendCardDragging");
-    cardEl.releasePointerCapture(pointerId);
-    pointerId = null;
+    if (cardEl.releasePointerCapture) {
+      cardEl.releasePointerCapture(pointerId);
+    }
+    endDrag();
     event.preventDefault();
     event.stopPropagation();
   };
 
+  const onMouseMove = (event) => {
+    if (!dragging || pointerId != null) return;
+    moveDrag(event.clientX, event.clientY);
+    event.preventDefault();
+  };
+
+  const onMouseUp = () => {
+    if (pointerId != null) return;
+    endDrag();
+  };
+
+  const onTouchMove = (event) => {
+    if (!dragging || pointerId != null) return;
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    moveDrag(touch.clientX, touch.clientY);
+    event.preventDefault();
+  };
+
+  const onTouchEnd = () => {
+    if (pointerId != null) return;
+    endDrag();
+  };
+
+  cardEl.addEventListener("mousedown", (event) => {
+    if (pointerId != null) return;
+    beginDrag(event.clientX, event.clientY);
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  cardEl.addEventListener(
+    "touchstart",
+    (event) => {
+      if (pointerId != null) return;
+      const touch = event.touches?.[0];
+      if (!touch) return;
+      beginDrag(touch.clientX, touch.clientY);
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    { passive: false }
+  );
   cardEl.addEventListener("pointerdown", onPointerDown);
   cardEl.addEventListener("pointermove", onPointerMove);
   cardEl.addEventListener("pointerup", onPointerUp);
   cardEl.addEventListener("pointercancel", onPointerUp);
+  window.addEventListener("mousemove", onMouseMove);
+  window.addEventListener("mouseup", onMouseUp);
+  window.addEventListener("touchmove", onTouchMove, { passive: false });
+  window.addEventListener("touchend", onTouchEnd);
+  window.addEventListener("touchcancel", onTouchEnd);
   applyTransform();
+  requestAnimationFrame(() => {
+    keepCardInsideMap();
+    applyTransform();
+  });
+  if (map && window.kakao?.maps?.event?.addListener) {
+    if (recommendOverlayIdleHandler && window.kakao?.maps?.event?.removeListener) {
+      kakao.maps.event.removeListener(map, "idle", recommendOverlayIdleHandler);
+    }
+    recommendOverlayIdleHandler = () => {
+      keepCardInsideMap();
+      applyTransform();
+    };
+    kakao.maps.event.addListener(map, "idle", recommendOverlayIdleHandler);
+  }
 }
 
 function addCandidateHighlightPin(position) {
@@ -434,43 +727,36 @@ function addCandidateHighlightPin(position) {
   return marker;
 }
 
-function addCandidateRecommendCard(position, { name, address, reasonText, placement }) {
+function addCandidateRecommendCard(position, { name, address, reasonText, placement, avoidancePoints = [] }) {
   clearCandidateRecommendOverlay();
-  const cardId = `mapRecommendCard-${Date.now()}`;
   const sideClass = placement?.side === "left" ? "mapRecommendCardLeft" : "mapRecommendCardRight";
-  const html = `
-    <div id="${cardId}" class="mapRecommendCard ${sideClass}">
-      <div class="mapRecommendKicker">추천 1순위</div>
-      <div class="mapRecommendTitle">${escapeHtml(name)}</div>
-      <div class="mapRecommendAddr">${escapeHtml(address)}</div>
-      <div class="mapRecommendDivider"></div>
-      <div class="mapRecommendReasonRow">
-        <span class="mapRecommendReasonDot" aria-hidden="true"></span>
-        <span class="mapRecommendReasonText">${escapeHtml(reasonText)}</span>
-      </div>
+  const cardEl = document.createElement("div");
+  cardEl.className = `mapRecommendCard ${sideClass}`;
+  cardEl.innerHTML = `
+    <span class="mapRecommendConnector" aria-hidden="true"></span>
+    <div class="mapRecommendKicker">추천 1순위</div>
+    <div class="mapRecommendTitle">${escapeHtml(name)}</div>
+    <div class="mapRecommendAddr">${escapeHtml(address)}</div>
+    <div class="mapRecommendDivider"></div>
+    <div class="mapRecommendReasonRow">
+      <span class="mapRecommendReasonDot" aria-hidden="true"></span>
+      <span class="mapRecommendReasonText">${escapeHtml(reasonText)}</span>
     </div>
   `;
-  const anchorByPlacement = {
-    rightDown: { xAnchor: -0.02, yAnchor: 1.32 },
-    leftDown: { xAnchor: 1.02, yAnchor: 1.32 },
-    rightUp: { xAnchor: -0.02, yAnchor: 0.12 },
-    leftUp: { xAnchor: 1.02, yAnchor: 0.12 }
-  };
-  const key = `${placement?.side === "left" ? "left" : "right"}${
-    placement?.vertical === "up" ? "Up" : "Down"
-  }`;
-  const anchor = anchorByPlacement[key] ?? anchorByPlacement.rightDown;
-
   candidateRecommendOverlay = new kakao.maps.CustomOverlay({
     map,
     position,
-    content: html,
-    xAnchor: anchor.xAnchor,
-    yAnchor: anchor.yAnchor,
+    content: cardEl,
+    // Keep initial card reliably visible: center-aligned and placed below midpoint pin.
+    xAnchor: 0.5,
+    yAnchor: 0,
     zIndex: 7,
     clickable: true
   });
-  requestAnimationFrame(() => enableRecommendCardDragging(cardId));
+  requestAnimationFrame(() => {
+    const initialOffset = computeRecommendCardOffset(cardEl, position, avoidancePoints);
+    enableRecommendCardDragging(cardEl, placement, position, initialOffset);
+  });
 }
 
 async function shareTopCandidate(item, address, reasonText) {
@@ -578,6 +864,7 @@ function summarizeOdsayPath(raw) {
 function openSheet() {
   sheetBackdropEl.style.display = "block";
   sheetEl.style.display = "block";
+  updateStickyShareButton();
   document.body.style.overflow = "hidden";
   if (map && isMapReady) {
     map.relayout();
@@ -588,6 +875,7 @@ function openSheet() {
 function closeSheet() {
   sheetBackdropEl.style.display = "none";
   sheetEl.style.display = "none";
+  updateStickyShareButton();
   document.body.style.overflow = "";
   clearRouteOverlay();
   if (markersHiddenForSheet) setCandidateMarkersVisible(true);
@@ -877,11 +1165,19 @@ async function renderTopCandidates(results, options = {}) {
   const { lat, lng, name } = item.candidate;
   const address = options?.preferredAddress || (await reverseGeocode(lat, lng));
   const reasonText = buildReasonSummary(item);
+  const recommendationStrength = recommendationStrengthLabel(item?.candidate?.tier);
+  const suitability = suitabilityLabel(item?.candidate?.tier, item?.candidate?.isPriority);
+  const contextLabel = hotplaceAccessibilityLabel(item);
+  const meetingIndex = meetingIndexScore(item);
 
   const position = new kakao.maps.LatLng(lat, lng);
   const candidateMarker = addCandidateHighlightPin(position);
   const placement = pickRecommendCardPlacement(item?.candidate, item?.perFriend);
-  addCandidateRecommendCard(position, { name, address, reasonText, placement });
+  const avoidancePoints = [
+    item?.candidate,
+    ...(item?.perFriend ?? []).map((pf) => pf?.startPoint).filter(Boolean)
+  ];
+  addCandidateRecommendCard(position, { name, address, reasonText, placement, avoidancePoints });
   if (candidateMarker) {
     kakao.maps.event.addListener(candidateMarker, "dblclick", () => void openCandidateDetails(item, address));
   }
@@ -900,9 +1196,10 @@ async function renderTopCandidates(results, options = {}) {
   card.innerHTML = `
     <strong class="text-slate-800">🌟 추천 1순위 - ${name}</strong>
     <div class="mt-1 text-xs text-slate-500">주소: ${address}</div>
-    <div class="mt-1 text-xs text-slate-500">신뢰 등급: ${
-      item?.candidate?.tier ? `Tier ${item.candidate.tier}` : "일반 후보"
-    }</div>
+    <div class="mt-1 text-xs text-slate-600">추천 강도: ${recommendationStrength}</div>
+    <div class="mt-1 text-xs text-slate-600">만남 적합도: ${suitability}</div>
+    <div class="mt-1 text-xs text-slate-600">라벨: ${contextLabel}</div>
+    <div class="mt-1 text-xs font-bold text-coral-600">만남지수 ${meetingIndex}점</div>
     ${
       item?.candidate?.shiftedFrom
         ? `<div class="mt-1 text-xs text-slate-500">후보 보정: ${escapeHtml(item.candidate.shiftedFrom)} → ${escapeHtml(
@@ -942,12 +1239,46 @@ async function renderTopCandidates(results, options = {}) {
 
 function addFriendRow(name = "", address = "", addressPlaceholder = "ex. 신도림역") {
   const row = document.createElement("div");
-  row.className = "friend-row grid grid-cols-[110px_minmax(0,1fr)] gap-2";
+  row.className = "friend-row grid grid-cols-[110px_minmax(0,1fr)_44px] gap-2";
   row.innerHTML = `
     <input type="text" placeholder="이름" value="${name}" class="name h-12 w-full min-w-0 rounded-2xl border border-coral-200 bg-[#fffdfb] px-3" autocomplete="name" enterkeyhint="next" />
     <input type="text" placeholder="${addressPlaceholder}" value="${address}" class="address h-12 w-full min-w-0 rounded-2xl border border-coral-200 bg-[#fffdfb] px-3" autocomplete="street-address" enterkeyhint="done" />
+    <button type="button" class="remove-friend tap-press h-12 w-11 rounded-2xl border border-coral-200 bg-white text-lg text-coral-500" aria-label="친구 삭제" title="친구 삭제">🗑️</button>
   `;
+  const removeBtn = row.querySelector(".remove-friend");
+  removeBtn?.addEventListener("click", () => {
+    const rows = [...friendsEl.querySelectorAll(".friend-row")];
+    if (rows.length <= 2) {
+      resultEl.textContent = "친구는 최소 2명 이상 필요해요.";
+      return;
+    }
+    row.remove();
+    refreshFriendRowPlaceholders();
+  });
   friendsEl.appendChild(row);
+}
+
+function refreshFriendRowPlaceholders() {
+  const rows = [...friendsEl.querySelectorAll(".friend-row")];
+  rows.forEach((row, index) => {
+    const addressInput = row.querySelector(".address");
+    if (addressInput) {
+      addressInput.placeholder = stationPlaceholders[index % stationPlaceholders.length];
+    }
+  });
+}
+
+function nextUniqueFriendDefaultName() {
+  const usedNames = new Set(
+    [...friendsEl.querySelectorAll(".friend-row .name")]
+      .map((el) => el.value.trim())
+      .filter(Boolean)
+  );
+  let index = 1;
+  while (usedNames.has(`친구${index}`)) {
+    index += 1;
+  }
+  return `친구${index}`;
 }
 
 addFriendRow("친구1", "", "ex. 신도림역");
@@ -955,7 +1286,8 @@ addFriendRow("친구2", "", "ex. 문정역");
 addFriendBtn.addEventListener("click", () => {
   const nextIndex = friendsEl.querySelectorAll(".friend-row").length + 1;
   const placeholder = stationPlaceholders[(nextIndex - 1) % stationPlaceholders.length];
-  addFriendRow(`친구${nextIndex}`, "", placeholder);
+  addFriendRow(nextUniqueFriendDefaultName(), "", placeholder);
+  refreshFriendRowPlaceholders();
 });
 
 runBtn.addEventListener("click", async () => {

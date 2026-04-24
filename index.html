@@ -142,27 +142,29 @@
         text-align: left;
         transform: translate(
           var(--recommend-drag-x, 0px),
-          calc(-8px + var(--recommend-drag-y, 0px))
+          calc(18px + var(--recommend-drag-y, 0px))
         );
         cursor: grab;
         user-select: none;
         touch-action: none;
+        pointer-events: auto;
       }
-      .mapRecommendCardRight::before {
-        content: "";
+      .mapRecommendConnector {
         position: absolute;
-        left: -42px;
+        left: 0;
         top: 14px;
         width: 42px;
+        height: 0;
         border-top: 2px dashed rgba(255, 111, 79, 0.9);
+        transform-origin: 0 0;
+        pointer-events: none;
       }
-      .mapRecommendCardLeft::before {
-        content: "";
-        position: absolute;
+      .mapRecommendCardRight .mapRecommendConnector {
+        left: 0;
+      }
+      .mapRecommendCardLeft .mapRecommendConnector {
+        left: 100%;
         right: -42px;
-        top: 14px;
-        width: 42px;
-        border-top: 2px dashed rgba(255, 111, 79, 0.9);
       }
       .mapRecommendCardDragging {
         cursor: grabbing;
@@ -324,7 +326,7 @@
         right: 0;
         bottom: 0;
         display: none;
-        z-index: 80;
+        z-index: 110;
         pointer-events: none;
       }
       #sheet > div {
@@ -338,6 +340,7 @@
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
+        padding-bottom: 18px;
       }
       @media (max-width: 720px) {
         input,

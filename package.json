@@ -11,7 +11,8 @@
     "start": "node --enable-source-maps dist/server/index.js",
     "build": "tsc -p tsconfig.json",
     "check": "tsc --noEmit",
-    "test:odsay": "node scripts/test-odsay.js"
+    "test:odsay": "node scripts/test-odsay.js",
+    "test:ab-shift": "node --import tsx scripts/ab-shift-check.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
