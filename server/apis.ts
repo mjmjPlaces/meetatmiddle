@@ -126,6 +126,54 @@ function timeBucketKey(bucketMinutes: number): string {
   return String(Math.floor(ms / bucketMs));
 }
 
+function haversineDistanceMeters(a: Point, b: Point): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const s1 = Math.sin(dLat / 2);
+  const s2 = Math.sin(dLng / 2);
+  const h = s1 * s1 + Math.cos(lat1) * Math.cos(lat2) * s2 * s2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function buildShortDistanceWalkFallback(start: Point, end: Point): RouteResult {
+  // Walking pace ~4.5km/h. Add 1min fixed buffer for signals/exit.
+  const distanceM = haversineDistanceMeters(start, end);
+  const minutes = Math.max(2, Math.ceil(distanceM / 75) + 1);
+  return {
+    totalMinutes: minutes,
+    transferCount: 0,
+    raw: {
+      result: {
+        path: [
+          {
+            info: {
+              totalTime: minutes,
+              busTransitCount: 0,
+              subwayTransitCount: 0,
+              distance: Math.round(distanceM)
+            },
+            subPath: [
+              {
+                trafficType: 3,
+                sectionTime: minutes
+              }
+            ]
+          }
+        ]
+      },
+      fallback: {
+        type: "walk_short_distance",
+        reason: "odsay_short_distance_under_700m",
+        distanceMeters: Math.round(distanceM)
+      }
+    }
+  };
+}
+
 export async function geocodeAddress(address: string): Promise<Point> {
   rollMetricsDate();
   const key = `geo:${address}`;
@@ -385,6 +433,9 @@ export async function getTransitRoute(
 
     const firstError = Array.isArray(body.error) ? body.error[0] : body.error;
     const errorMessage = firstError?.message ?? firstError?.msg;
+    const isShortDistance =
+      typeof errorMessage === "string" &&
+      (errorMessage.includes("700m") || errorMessage.includes("700 m"));
     if (firstError) {
       console.error("[ODsay] api error", {
         attempt,
@@ -406,6 +457,18 @@ export async function getTransitRoute(
 
     const paths = body.result?.path;
     if (!Array.isArray(paths) || paths.length === 0) {
+      if (isShortDistance) {
+        const fallbackRoute = buildShortDistanceWalkFallback(start, end);
+        console.warn("[ODsay] short-distance fallback applied", {
+          attempt,
+          from: debugMeta?.fromLabel ?? "unknown",
+          to: debugMeta?.toLabel ?? "unknown",
+          message: errorMessage,
+          fallbackMinutes: fallbackRoute.totalMinutes
+        });
+        routeCache.set(cacheKey, fallbackRoute);
+        return fallbackRoute;
+      }
       console.error("[ODsay] no path result", {
         attempt,
         from: debugMeta?.fromLabel ?? "unknown",
