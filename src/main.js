@@ -780,7 +780,7 @@ async function renderTopCandidates(results) {
 
 function addFriendRow(name = "", address = "", addressPlaceholder = "ex. 신도림역") {
   const row = document.createElement("div");
-  row.className = "friend-row grid grid-cols-1 gap-2 sm:grid-cols-[120px_1fr]";
+  row.className = "friend-row grid grid-cols-[110px_1fr] gap-2";
   row.innerHTML = `
     <input type="text" placeholder="이름" value="${name}" class="name h-12 rounded-2xl border border-coral-200 bg-[#fffdfb] px-3" autocomplete="name" enterkeyhint="next" />
     <input type="text" placeholder="${addressPlaceholder}" value="${address}" class="address h-12 rounded-2xl border border-coral-200 bg-[#fffdfb] px-3" autocomplete="street-address" enterkeyhint="done" />
