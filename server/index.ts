@@ -1,4 +1,4 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import cors from "cors";
 import express from "express";
 import fs from "node:fs";
@@ -7,6 +7,10 @@ import { fileURLToPath } from "node:url";
 import { getApiMetrics, loadLane } from "./apis.js";
 import { findMidpoints, getMidpointRunMeta } from "./midpointService.js";
 import { MidpointRequest } from "./types.js";
+
+// Load .env first, then let .env.local override for local development.
+dotenv.config();
+dotenv.config({ path: ".env.local", override: true });
 
 const app = express();
 
