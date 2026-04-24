@@ -434,6 +434,23 @@ function buildCompactSharePayload(item, address, reasonText) {
   };
 }
 
+function buildTinyShareFallbackPayload(item, address, reasonText) {
+  return {
+    item: {
+      candidate: {
+        name: item?.candidate?.name,
+        lat: item?.candidate?.lat,
+        lng: item?.candidate?.lng
+      },
+      averageMinutes: item?.averageMinutes,
+      maxMinutes: item?.maxMinutes,
+      perFriend: []
+    },
+    address,
+    reasonText
+  };
+}
+
 async function readShareStateFromQuery() {
   const params = new URLSearchParams(window.location.search);
   const sid = params.get("sid");
@@ -871,8 +888,9 @@ async function shareTopCandidate(item, address, reasonText) {
   const maxText = `${Math.round(item?.maxMinutes ?? 0)}분`;
   const destinationName = item?.candidate?.name ?? "추천 지점";
   const sharePayload = buildCompactSharePayload(item, address, reasonText);
-  // Use self-contained share links for Kakao buttons to avoid sid/cache mismatch on mobile.
-  const shareUrls = buildShareUrls(sharePayload);
+  const tinyFallbackPayload = buildTinyShareFallbackPayload(item, address, reasonText);
+  const sid = await createShareSession(sharePayload);
+  const shareUrls = sid ? buildShareUrlsFromSid(sid, tinyFallbackPayload) : buildShareUrls(tinyFallbackPayload);
   const mapOnlyUrl = `https://map.kakao.com/link/map/${encodeURIComponent(destinationName)},${item?.candidate?.lat},${item?.candidate?.lng}`;
 
   try {
