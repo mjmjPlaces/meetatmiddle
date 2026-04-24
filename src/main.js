@@ -366,7 +366,7 @@ function fromBase64Url(token) {
 function buildShareUrls(payload) {
   // Always publish Kakao share links to production domain for consistency.
   const shareOrigin = PUBLIC_SHARE_ORIGIN;
-  const base = `${shareOrigin}${window.location.pathname}`;
+  const base = `${shareOrigin}/`;
   const token = encodeURIComponent(toBase64Url(payload));
   const rootUrl = `${base}?share=${token}`;
   return {
