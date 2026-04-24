@@ -3,8 +3,8 @@
 친구들 출발지 기준으로 대중교통 중간지점을 찾는 서비스입니다.
 
 ## 구현 범위
-- 모드 1: 균등 모드(`balanced`) - 최대 소요시간(minimax) 중심
-- 모드 2: 비균등 모드(`majority`) - 다수 평균시간 최소화(이상치 가중치 완화)
+- 단일 균등 모드 - 최대 소요시간(minimax) 중심
+- 상권 규모 보정 점수 반영 (상권 데이터 기반)
 - Kakao Local API: 주소 -> 좌표
 - ODsay API: 출발지 -> 후보지 대중교통 소요시간/환승수
 - 후보지 샘플링 + 캐시 + 레이트리밋 적용
@@ -12,7 +12,7 @@
 ## 파일 구조
 - `server/index.ts`: API 엔드포인트
 - `server/midpointService.ts`: 핵심 계산 흐름
-- `server/scoring.ts`: 모드별 점수 계산
+- `server/scoring.ts`: 점수 계산
 - `server/apis.ts`: Kakao/ODsay 연동
 - `server/cache.ts`: TTL 캐시
 - `server/rateLimiter.ts`: 토큰 버킷 레이트리밋
@@ -82,12 +82,53 @@
 4. ODsay 플랫폼/키 정책 확인 후 운영 서버 기준으로 적용
 5. `/api/ops/metrics`로 호출량과 캐시 hit-rate 모니터링
 
+## 개발/테스트/릴리즈 시퀀스 (권장)
+규모가 커질수록 **로컬 확인 -> Preview 확인 -> Production 릴리즈** 순서가 안전합니다.
+
+### 1) 로컬 개발/검증
+1. 작업 브랜치 생성: `feature/<topic>`
+2. 로컬 실행:
+   - `npm install`
+   - `npm run dev`
+3. 아래 항목을 로컬에서 우선 점검:
+   - 중간지점 계산 성공/실패 메시지
+   - 세부 경로 시트 스크롤/버튼 동작
+   - 카카오 공유 버튼(가능하면 모바일 브라우저 포함)
+4. 로컬 커밋:
+   - `git add <changed files>`
+   - `git commit -m "<message>"`
+
+### 2) 내부 Preview 테스트
+1. 브랜치를 원격으로 push
+2. Vercel Preview URL 생성 확인
+3. (권장) Railway Staging/Preview API와 연결해 통합 확인
+4. Preview에서 체크리스트 실행:
+   - CORS 오류 없음
+   - Kakao SDK/공유 정상
+   - ODsay 경로 계산 및 fallback(700m) 정상
+   - 지도/경로/세부 UI 동작 정상
+
+### 3) Production 릴리즈
+1. Preview 검증 통과 후 `main`에 병합
+2. `main` 배포 완료 확인 (Vercel + Railway)
+3. 운영 점검:
+   - `GET /api/health`
+   - `GET /api/ops/metrics`
+   - 실제 공유 썸네일/카카오 공유 동작 확인
+
+### 빠른 체크 명령 예시 (PowerShell)
+```powershell
+cd "C:\Users\cocak\OneDrive\OneSyncFiles\Obsidian\ZZ. Cursor\Midpoint Navigator"
+git checkout -b feature/<topic>
+npm install
+npm run dev
+```
+
 ## API 사용 예시
 `POST /api/midpoint`
 
 ```json
 {
-  "mode": "balanced",
   "friends": [
     { "id": "f1", "name": "A", "address": "서울특별시 강남구" },
     { "id": "f2", "name": "B", "address": "서울특별시 마포구" }
@@ -95,9 +136,7 @@
   "options": {
     "topN": 3,
     "maxCandidates": 25,
-    "transferPenalty": 8,
-    "outlierWeight": 0.5,
-    "reducedOutlierCount": 1
+    "transferPenalty": 8
   }
 }
 ```
