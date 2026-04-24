@@ -354,6 +354,60 @@ function buildShareUrls(payload) {
   };
 }
 
+function compactRouteRaw(raw) {
+  const path0 = raw?.result?.path?.[0];
+  if (!path0) return undefined;
+  return {
+    result: {
+      path: [
+        {
+          info: {
+            mapObj: path0?.info?.mapObj || ""
+          },
+          subPath: (path0?.subPath ?? []).map((sub) => ({
+            trafficType: sub?.trafficType,
+            sectionTime: sub?.sectionTime,
+            lane: (sub?.lane ?? []).map((lane) => ({
+              name: lane?.name,
+              busNo: lane?.busNo
+            }))
+          }))
+        }
+      ]
+    }
+  };
+}
+
+function buildCompactSharePayload(item, address, reasonText) {
+  return {
+    item: {
+      candidate: {
+        name: item?.candidate?.name,
+        lat: item?.candidate?.lat,
+        lng: item?.candidate?.lng,
+        tier: item?.candidate?.tier,
+        isPriority: item?.candidate?.isPriority,
+        shiftedFrom: item?.candidate?.shiftedFrom
+      },
+      averageMinutes: item?.averageMinutes,
+      maxMinutes: item?.maxMinutes,
+      perFriend: (item?.perFriend ?? []).map((pf) => ({
+        friendId: pf?.friendId,
+        friendName: pf?.friendName,
+        friendAddress: pf?.friendAddress,
+        startPoint: pf?.startPoint,
+        route: {
+          totalMinutes: pf?.route?.totalMinutes,
+          transferCount: pf?.route?.transferCount,
+          raw: compactRouteRaw(pf?.route?.raw)
+        }
+      }))
+    },
+    address,
+    reasonText
+  };
+}
+
 function readShareStateFromQuery() {
   const params = new URLSearchParams(window.location.search);
   const token = params.get("share");
@@ -774,35 +828,52 @@ async function shareTopCandidate(item, address, reasonText) {
   const avgText = `${Math.round(item?.averageMinutes ?? 0)}분`;
   const maxText = `${Math.round(item?.maxMinutes ?? 0)}분`;
   const destinationName = item?.candidate?.name ?? "추천 지점";
-  const sharePayload = { item, address, reasonText };
+  const sharePayload = buildCompactSharePayload(item, address, reasonText);
   const shareUrls = buildShareUrls(sharePayload);
+  const mapOnlyUrl = `https://map.kakao.com/link/map/${encodeURIComponent(destinationName)},${item?.candidate?.lat},${item?.candidate?.lng}`;
 
-  window.Kakao.Share.sendDefault({
-    objectType: "feed",
-    content: {
-      title: `쌤밋 · 우리 모임 1순위 중간지점: ${destinationName}`,
-      description: `${reasonText} · 평균 ${avgText} / 최대 ${maxText}\n${address}`,
-      imageUrl: "https://samemeet.com/samemeet-thumbnail.png",
-      link: {
-        mobileWebUrl: shareUrls.rootUrl,
-        webUrl: shareUrls.rootUrl
-      }
-    },
-    buttons: [
-      {
-        title: "지도에서 보기",
-        link: { mobileWebUrl: shareUrls.mapUrl, webUrl: shareUrls.mapUrl }
+  try {
+    window.Kakao.Share.sendDefault({
+      objectType: "feed",
+      content: {
+        title: `쌤밋 · 우리 모임 1순위 중간지점: ${destinationName}`,
+        description: `${reasonText} · 평균 ${avgText} / 최대 ${maxText}\n${address}`,
+        imageUrl: "https://samemeet.com/samemeet-thumbnail.png",
+        link: {
+          mobileWebUrl: shareUrls.rootUrl,
+          webUrl: shareUrls.rootUrl
+        }
       },
-      {
-        title: "친구 별 경로 보기",
-        link: { mobileWebUrl: shareUrls.friendRouteUrl, webUrl: shareUrls.friendRouteUrl }
+      buttons: [
+        {
+          title: "지도에서 보기",
+          link: { mobileWebUrl: shareUrls.mapUrl, webUrl: shareUrls.mapUrl }
+        },
+        {
+          title: "친구 별 경로 보기",
+          link: { mobileWebUrl: shareUrls.friendRouteUrl, webUrl: shareUrls.friendRouteUrl }
+        }
+      ],
+      itemContent: {
+        profileText: "친구별 예상 소요시간",
+        titleImageText: friendSummary || "상세 경로는 서비스에서 확인해 주세요."
       }
-    ],
-    itemContent: {
-      profileText: "친구별 예상 소요시간",
-      titleImageText: friendSummary || "상세 경로는 서비스에서 확인해 주세요."
-    }
-  });
+    });
+  } catch (error) {
+    // Fallback for Kakao validation failures (e.g. oversized URL/payload)
+    lastShareErrorDetail = `공유 요청 실패: ${String(error)}`;
+    resultEl.textContent = `${lastShareErrorDetail} (간소 링크로 재시도해 주세요)`;
+    window.Kakao.Share.sendDefault({
+      objectType: "feed",
+      content: {
+        title: `쌤밋 · 우리 모임 1순위 중간지점: ${destinationName}`,
+        description: `${reasonText} · 평균 ${avgText} / 최대 ${maxText}\n${address}`,
+        imageUrl: "https://samemeet.com/samemeet-thumbnail.png",
+        link: { mobileWebUrl: mapOnlyUrl, webUrl: mapOnlyUrl }
+      },
+      buttons: [{ title: "지도에서 보기", link: { mobileWebUrl: mapOnlyUrl, webUrl: mapOnlyUrl } }]
+    });
+  }
 }
 
 function reverseGeocode(lat, lng) {
