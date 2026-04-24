@@ -3,8 +3,10 @@ import cors from "cors";
 import express from "express";
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { getApiMetrics, loadLane } from "./apis.js";
+import { TTLCache } from "./cache.js";
 import { findMidpoints, getMidpointRunMeta } from "./midpointService.js";
 import { MidpointRequest } from "./types.js";
 
@@ -13,6 +15,7 @@ dotenv.config();
 dotenv.config({ path: ".env.local", override: true });
 
 const app = express();
+const sharePayloadCache = new TTLCache<unknown>(1000 * 60 * 60 * 24);
 
 /** Repo root (where index.html lives). Railway cwd is not always the repo root; resolve from this file. */
 function resolveWebRoot(): string {
@@ -80,6 +83,24 @@ app.get("/api/public-config", (_req, res) => {
   res.json({
     kakaoJsKey: (process.env.KAKAO_JS_KEY ?? "").trim().replace(/^["']|["']$/g, "")
   });
+});
+
+app.post("/api/share", (req, res) => {
+  const payload = req.body;
+  if (!payload || typeof payload !== "object") {
+    return res.status(400).json({ error: "payload is required" });
+  }
+  const sid = randomUUID().replace(/-/g, "").slice(0, 16);
+  sharePayloadCache.set(sid, payload);
+  return res.json({ sid });
+});
+
+app.get("/api/share/:sid", (req, res) => {
+  const sid = String(req.params.sid ?? "").trim();
+  if (!sid) return res.status(400).json({ error: "sid is required" });
+  const payload = sharePayloadCache.get(sid);
+  if (!payload) return res.status(404).json({ error: "share payload not found or expired" });
+  return res.json({ payload });
 });
 
 app.post("/api/midpoint", async (req, res) => {

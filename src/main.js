@@ -30,6 +30,19 @@ const stationPlaceholders = [
 const RAILWAY_API_ORIGIN = "https://meetatmiddle-production.up.railway.app";
 const PUBLIC_SHARE_ORIGIN = "https://samemeet.com";
 
+function isLocalLikeHost(hostname) {
+  if (!hostname) return false;
+  const host = hostname.trim().toLowerCase();
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host.endsWith(".local")) {
+    return true;
+  }
+  // Mobile-on-LAN testing often uses private IP hosts.
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
+  return false;
+}
+
 function apiUrl(path) {
   const p = path.startsWith("/") ? path : `/${path}`;
   const h = window.location.hostname;
@@ -37,6 +50,12 @@ function apiUrl(path) {
     h === "localhost" || h === "127.0.0.1" || h.endsWith(".up.railway.app");
   if (apiOnSameHost) return p;
   return `${RAILWAY_API_ORIGIN}${p}`;
+}
+
+function shareApiUrl(path) {
+  const p = path.startsWith("/") ? path : `/${path}`;
+  if (isLocalLikeHost(window.location.hostname)) return `${RAILWAY_API_ORIGIN}${p}`;
+  return apiUrl(p);
 }
 
 let map;
@@ -345,13 +364,7 @@ function fromBase64Url(token) {
 }
 
 function buildShareUrls(payload) {
-  const host = window.location.hostname;
-  const isLocalHost =
-    host === "localhost" ||
-    host === "127.0.0.1" ||
-    host === "::1" ||
-    host.endsWith(".local");
-  const shareOrigin = isLocalHost ? PUBLIC_SHARE_ORIGIN : window.location.origin;
+  const shareOrigin = isLocalLikeHost(window.location.hostname) ? PUBLIC_SHARE_ORIGIN : window.location.origin;
   const base = `${shareOrigin}${window.location.pathname}`;
   const token = encodeURIComponent(toBase64Url(payload));
   const rootUrl = `${base}?share=${token}`;
@@ -360,6 +373,33 @@ function buildShareUrls(payload) {
     mapUrl: `${rootUrl}&view=map`,
     friendRouteUrl: `${rootUrl}&view=friends`
   };
+}
+
+function buildShareUrlsFromSid(sid) {
+  const shareOrigin = isLocalLikeHost(window.location.hostname) ? PUBLIC_SHARE_ORIGIN : window.location.origin;
+  const base = `${shareOrigin}${window.location.pathname}`;
+  const encodedSid = encodeURIComponent(sid);
+  const rootUrl = `${base}?sid=${encodedSid}`;
+  return {
+    rootUrl,
+    mapUrl: `${rootUrl}&view=map`,
+    friendRouteUrl: `${rootUrl}&view=friends`
+  };
+}
+
+async function createShareSession(payload) {
+  try {
+    const res = await fetch(shareApiUrl("/api/share"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) return "";
+    const data = await res.json();
+    return String(data?.sid ?? "");
+  } catch {
+    return "";
+  }
 }
 
 function buildCompactSharePayload(item, address, reasonText) {
@@ -391,8 +431,24 @@ function buildCompactSharePayload(item, address, reasonText) {
   };
 }
 
-function readShareStateFromQuery() {
+async function readShareStateFromQuery() {
   const params = new URLSearchParams(window.location.search);
+  const sid = params.get("sid");
+  if (sid) {
+    try {
+      const res = await fetch(shareApiUrl(`/api/share/${encodeURIComponent(sid)}`));
+      if (res.ok) {
+        const data = await res.json();
+        const payload = data?.payload;
+        if (payload?.item?.candidate) {
+          const view = params.get("view");
+          return { payload, view };
+        }
+      }
+    } catch {
+      // ignore and try legacy share param
+    }
+  }
   const token = params.get("share");
   if (!token) return null;
   try {
@@ -812,7 +868,8 @@ async function shareTopCandidate(item, address, reasonText) {
   const maxText = `${Math.round(item?.maxMinutes ?? 0)}분`;
   const destinationName = item?.candidate?.name ?? "추천 지점";
   const sharePayload = buildCompactSharePayload(item, address, reasonText);
-  const shareUrls = buildShareUrls(sharePayload);
+  const sid = await createShareSession(sharePayload);
+  const shareUrls = sid ? buildShareUrlsFromSid(sid) : buildShareUrls(sharePayload);
   const mapOnlyUrl = `https://map.kakao.com/link/map/${encodeURIComponent(destinationName)},${item?.candidate?.lat},${item?.candidate?.lng}`;
 
   try {
@@ -1444,18 +1501,20 @@ if (locateBtnEl) {
 
 ensureMapReady();
 
-const sharedState = readShareStateFromQuery();
-if (sharedState?.payload?.item) {
-  setSearchViewVisible(false);
-  resultEl.textContent = "공유된 중간지점 결과를 불러왔습니다.";
-  const sharedOptions = {
-    preferredAddress: sharedState.payload.address || "",
-    autoOpenDetails: sharedState.view === "friends"
-  };
-  if (isMapReady) {
-    void renderTopCandidates([sharedState.payload.item], sharedOptions);
-  } else {
-    pendingResultsForMap = { results: [sharedState.payload.item], options: sharedOptions };
-    mapStatusEl.textContent = "공유 결과를 지도에 표시하는 중...";
+void (async () => {
+  const sharedState = await readShareStateFromQuery();
+  if (sharedState?.payload?.item) {
+    setSearchViewVisible(false);
+    resultEl.textContent = "공유된 중간지점 결과를 불러왔습니다.";
+    const sharedOptions = {
+      preferredAddress: sharedState.payload.address || "",
+      autoOpenDetails: sharedState.view === "friends"
+    };
+    if (isMapReady) {
+      void renderTopCandidates([sharedState.payload.item], sharedOptions);
+    } else {
+      pendingResultsForMap = { results: [sharedState.payload.item], options: sharedOptions };
+      mapStatusEl.textContent = "공유 결과를 지도에 표시하는 중...";
+    }
   }
-}
+})();
