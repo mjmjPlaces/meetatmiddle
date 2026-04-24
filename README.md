@@ -21,14 +21,18 @@
 ## 실행 준비
 1. Node.js 20+ 설치
 2. `npm install`
-3. `.env.example`를 `.env`로 복사 후 키 입력
+3. `.env.example`를 `.env`로 복사 후 키 입력 (또는 `.env.local.example` -> `.env.local`)
 4. `npm run dev`
 
 ## 운영 환경 변수
 - `NODE_ENV`: `production` 권장
 - `PORT`: 서버 포트
 - `ALLOWED_ORIGINS`: 콤마 구분 허용 origin 목록 (운영 + 프리뷰)
-- `KAKAO_REST_API_KEY`, `KAKAO_JS_KEY`, `ODSAY_API_KEY`
+- `KAKAO_REST_API_KEY`, `KAKAO_JS_KEY`
+- ODsay 키/Origin (환경별 분리 권장)
+  - `ODSAY_API_KEY_DEV`, `ODSAY_WEB_ORIGIN_DEV`
+  - `ODSAY_API_KEY_PROD`, `ODSAY_WEB_ORIGIN_PROD`
+  - 하위 호환: `ODSAY_API_KEY`, `ODSAY_WEB_ORIGIN`
 - `DAILY_ODSAY_BUDGET`: 일 ODsay 호출 예산
 - `GEOCODE_CACHE_TTL_MIN`, `ROUTE_CACHE_TTL_MIN`, `LANE_CACHE_TTL_MIN`
 

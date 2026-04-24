@@ -7,10 +7,20 @@ function mustEnv(name) {
   return value;
 }
 
-const apiKey = mustEnv("ODSAY_API_KEY");
+function optionalEnv(name) {
+  return process.env[name]?.trim().replace(/^["']|["']$/g, "") ?? "";
+}
+
+function stagedEnv(baseName) {
+  const isProd = process.env.NODE_ENV === "production";
+  const stageName = `${baseName}_${isProd ? "PROD" : "DEV"}`;
+  return optionalEnv(stageName) || optionalEnv(baseName);
+}
+
+const apiKey = stagedEnv("ODSAY_API_KEY") || mustEnv("ODSAY_API_KEY");
 /** ODsay WEB 키와 동일한 Origin — .env의 ODSAY_WEB_ORIGIN 우선, 없으면 프로덕션 Vercel URL */
 function odsayWebOriginHeaders() {
-  const raw = process.env.ODSAY_WEB_ORIGIN?.trim().replace(/^["']|["']$/g, "") ?? "";
+  const raw = stagedEnv("ODSAY_WEB_ORIGIN");
   const origin = (raw || "https://midpoint-navigator.vercel.app").replace(/\/$/, "");
   return { Origin: origin, Referer: `${origin}/` };
 }

@@ -91,6 +91,16 @@ function mustEnv(name: string): string {
   return value;
 }
 
+function optionalEnv(name: string): string {
+  return process.env[name]?.trim().replace(/^["']|["']$/g, "") ?? "";
+}
+
+function stagedEnv(baseName: string): string {
+  const isProd = process.env.NODE_ENV === "production";
+  const stageName = `${baseName}_${isProd ? "PROD" : "DEV"}`;
+  return optionalEnv(stageName) || optionalEnv(baseName);
+}
+
 /** Prevent leaking secrets when logs are shared externally. */
 function maskApiKeyInUrl(url: string): string {
   return url.replace(/([?&]apiKey=)[^&]*/i, "$1***");
@@ -98,7 +108,7 @@ function maskApiKeyInUrl(url: string): string {
 
 /** ODsay WEB 플랫폼 등록 도메인. 우선순위: ODSAY_WEB_ORIGIN → production일 때 기본 Vercel URL → 로컬 개발용 localhost */
 function odsayWebOriginHeaders(): { Origin: string; Referer: string } {
-  const raw = process.env.ODSAY_WEB_ORIGIN?.trim().replace(/^["']|["']$/g, "") ?? "";
+  const raw = stagedEnv("ODSAY_WEB_ORIGIN");
   const fromEnv = raw.replace(/\/$/, "");
   if (fromEnv) {
     return { Origin: fromEnv, Referer: `${fromEnv}/` };
@@ -333,24 +343,27 @@ export async function getTransitRoute(
   if (inFlight) return inFlight;
 
   const promise = (async () => {
-  const apiKey = mustEnv("ODSAY_API_KEY");
+  const apiKey = stagedEnv("ODSAY_API_KEY") || mustEnv("ODSAY_API_KEY");
   if (!hasLoggedOdsayEnv) {
     const wh = odsayWebOriginHeaders();
+    const resolvedOriginRaw = stagedEnv("ODSAY_WEB_ORIGIN");
     console.log("[ODsay] env check", {
       exists: Boolean(apiKey),
       length: apiKey.length,
-      ODSAY_WEB_ORIGIN_env: process.env.ODSAY_WEB_ORIGIN?.trim() ? "set" : "EMPTY",
+      ODSAY_API_KEY_stage: process.env.NODE_ENV === "production" ? "PROD" : "DEV",
+      ODSAY_WEB_ORIGIN_stage: process.env.NODE_ENV === "production" ? "PROD" : "DEV",
+      ODSAY_WEB_ORIGIN_env: resolvedOriginRaw ? "set" : "EMPTY",
       originSentToOdsay: wh.Origin,
       refererSentToOdsay: wh.Referer
     });
-    if (!process.env.ODSAY_WEB_ORIGIN?.trim()) {
+    if (!resolvedOriginRaw) {
       if (process.env.NODE_ENV === "production") {
         console.warn(
-          `[ODsay] ODSAY_WEB_ORIGIN unset — using default ${PRODUCTION_FRONTEND_ORIGIN} for WEB headers. 명시하려면 Railway에 ODSAY_WEB_ORIGIN을 설정하세요.`
+          `[ODsay] ODSAY_WEB_ORIGIN(_PROD) unset — using default ${PRODUCTION_FRONTEND_ORIGIN} for WEB headers.`
         );
       } else {
         console.log(
-          `[ODsay] ODSAY_WEB_ORIGIN unset — using ${LOCAL_DEV_FRONTEND_ORIGIN} (development). WEB 키 테스트는 .env에 ODSAY_WEB_ORIGIN=${PRODUCTION_FRONTEND_ORIGIN} 권장.`
+          `[ODsay] ODSAY_WEB_ORIGIN(_DEV) unset — using ${LOCAL_DEV_FRONTEND_ORIGIN} (development).`
         );
       }
     }
@@ -525,7 +538,7 @@ export async function loadLane(mapObj: string): Promise<unknown> {
 
   const promise = (async () => {
 
-  const apiKey = mustEnv("ODSAY_API_KEY");
+  const apiKey = stagedEnv("ODSAY_API_KEY") || mustEnv("ODSAY_API_KEY");
   const requestUrl =
     "https://api.odsay.com/v1/api/loadLane" +
     `?mapObject=${encodeURIComponent(normalized)}` +

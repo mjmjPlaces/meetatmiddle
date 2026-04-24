@@ -68,10 +68,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\git-first-push.ps1
 - [ ] `PORT=4000`
 - [ ] `KAKAO_REST_API_KEY=...`
 - [ ] `KAKAO_JS_KEY=...`
-- [ ] `ODSAY_API_KEY=...`
+- [ ] `ODSAY_API_KEY_PROD=...` (권장) 또는 `ODSAY_API_KEY=...`
 - [ ] `DAILY_ODSAY_BUDGET=15000` (원하는 값으로 조정)
 - [ ] `ALLOWED_ORIGINS=https://<prod-domain>,https://<www-domain>,https://<vercel-preview-domain>`
-- [ ] **WEB 키 사용 시** `ODSAY_WEB_ORIGIN=https://<vercel-프로덕션-도메인>` (끝 `/` 없이) — ODsay 콘솔에 등록한 URI와 **동일**해야 함. **`ALLOWED_ORIGINS`와는 별개**(CORS용 vs ODsay 호출 시 `Origin`/`Referer`용). 미설정 시 production에서는 코드 기본값(`server/constants/public_origins.ts`의 `PRODUCTION_FRONTEND_ORIGIN`)을 사용.
+- [ ] **WEB 키 사용 시** `ODSAY_WEB_ORIGIN_PROD=https://<vercel-프로덕션-도메인>` (권장, 끝 `/` 없이) — ODsay 콘솔 URI와 **동일**해야 함. 하위 호환으로 `ODSAY_WEB_ORIGIN`도 사용 가능. **`ALLOWED_ORIGINS`와는 별개**(CORS용 vs ODsay 호출 시 `Origin`/`Referer`용). 미설정 시 production에서는 코드 기본값(`server/constants/public_origins.ts`의 `PRODUCTION_FRONTEND_ORIGIN`)을 사용.
 
 ## 3) Vercel (Frontend)
 
