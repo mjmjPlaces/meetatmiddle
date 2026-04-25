@@ -16,6 +16,75 @@ dotenv.config({ path: ".env.local", override: true });
 
 const app = express();
 const sharePayloadCache = new TTLCache<unknown>(1000 * 60 * 60 * 24);
+const MIDPOINT_METRIC_WINDOW = 300;
+const MIDPOINT_P95_WARN_MS = Number(process.env.MIDPOINT_P95_WARN_MS ?? 8000);
+const MIDPOINT_ALERT_WEBHOOK_URL = (process.env.MIDPOINT_ALERT_WEBHOOK_URL ?? "").trim();
+const MIDPOINT_ALERT_COOLDOWN_MS = Number(process.env.MIDPOINT_ALERT_COOLDOWN_MS ?? 10 * 60 * 1000);
+const midpointDurationWindow: number[] = [];
+const midpointOdsayDeltaWindow: number[] = [];
+let midpointTotalRequests = 0;
+let midpointTotalFailures = 0;
+let lastMidpointAlertAt = 0;
+let midpointLastRun: {
+  durationMs: number;
+  odsayCalls: number;
+  ok: boolean;
+  degradedMode: boolean;
+  degradedReason: string;
+  timestamp: string;
+} | null = null;
+
+function pushWindow(arr: number[], value: number) {
+  arr.push(value);
+  if (arr.length > MIDPOINT_METRIC_WINDOW) arr.shift();
+}
+
+function average(values: number[]): number {
+  if (!values.length) return 0;
+  return values.reduce((sum, v) => sum + v, 0) / values.length;
+}
+
+function percentile(values: number[], p: number): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = Math.ceil((p / 100) * sorted.length) - 1;
+  const idx = Math.max(0, Math.min(sorted.length - 1, rank));
+  return sorted[idx];
+}
+
+async function maybeEmitMidpointPerfAlert() {
+  if (midpointDurationWindow.length < 20) return;
+  const p95Ms = percentile(midpointDurationWindow, 95);
+  if (p95Ms < MIDPOINT_P95_WARN_MS) return;
+  const now = Date.now();
+  if (now - lastMidpointAlertAt < MIDPOINT_ALERT_COOLDOWN_MS) return;
+  lastMidpointAlertAt = now;
+
+  const payload = {
+    text:
+      `[MidpointPerf] p95 warning: ${Math.round(p95Ms)}ms (threshold ${MIDPOINT_P95_WARN_MS}ms)\n` +
+      `window=${midpointDurationWindow.length}, avg=${average(midpointDurationWindow).toFixed(1)}ms, ` +
+      `avgOdsayCalls=${average(midpointOdsayDeltaWindow).toFixed(2)}`
+  };
+  console.warn("[MidpointPerf] p95_threshold_exceeded", {
+    p95Ms: Math.round(p95Ms),
+    thresholdMs: MIDPOINT_P95_WARN_MS,
+    windowSize: midpointDurationWindow.length,
+    avgMs: Number(average(midpointDurationWindow).toFixed(1)),
+    avgOdsayCallsPerRequest: Number(average(midpointOdsayDeltaWindow).toFixed(2))
+  });
+
+  if (!MIDPOINT_ALERT_WEBHOOK_URL) return;
+  try {
+    await fetch(MIDPOINT_ALERT_WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  } catch (error) {
+    console.warn("[MidpointPerf] alert_webhook_failed", { error: String(error) });
+  }
+}
 
 /** Repo root (where index.html lives). Railway cwd is not always the repo root; resolve from this file. */
 function resolveWebRoot(): string {
@@ -109,6 +178,9 @@ app.get("/api/share/:sid", (req, res) => {
 });
 
 app.post("/api/midpoint", async (req, res) => {
+  const startedAt = Date.now();
+  const before = getApiMetrics();
+  midpointTotalRequests += 1;
   try {
     const body = req.body as MidpointRequest;
     if (!body?.friends?.length || body.friends.length < 2) {
@@ -116,8 +188,49 @@ app.post("/api/midpoint", async (req, res) => {
     }
     const results = await findMidpoints(body);
     const runMeta = getMidpointRunMeta();
+    const after = getApiMetrics();
+    const durationMs = Date.now() - startedAt;
+    const odsayCalls = Math.max(0, after.odsayCallsToday - before.odsayCallsToday);
+    pushWindow(midpointDurationWindow, durationMs);
+    pushWindow(midpointOdsayDeltaWindow, odsayCalls);
+    midpointLastRun = {
+      durationMs,
+      odsayCalls,
+      ok: true,
+      degradedMode: runMeta.degradedMode,
+      degradedReason: runMeta.degradedReason,
+      timestamp: new Date().toISOString()
+    };
+    console.log("[MidpointPerf] request", {
+      durationMs,
+      odsayCalls,
+      routeCacheHitRate: Number(after.cache.route.hitRate.toFixed(4)),
+      degradedMode: runMeta.degradedMode,
+      degradedReason: runMeta.degradedReason
+    });
+    void maybeEmitMidpointPerfAlert();
     return res.json({ results, degradedMode: runMeta.degradedMode, degradedReason: runMeta.degradedReason });
   } catch (error) {
+    midpointTotalFailures += 1;
+    const after = getApiMetrics();
+    const durationMs = Date.now() - startedAt;
+    const odsayCalls = Math.max(0, after.odsayCallsToday - before.odsayCallsToday);
+    pushWindow(midpointDurationWindow, durationMs);
+    pushWindow(midpointOdsayDeltaWindow, odsayCalls);
+    midpointLastRun = {
+      durationMs,
+      odsayCalls,
+      ok: false,
+      degradedMode: false,
+      degradedReason: "failed",
+      timestamp: new Date().toISOString()
+    };
+    console.warn("[MidpointPerf] request_failed", {
+      durationMs,
+      odsayCalls,
+      routeCacheHitRate: Number(after.cache.route.hitRate.toFixed(4))
+    });
+    void maybeEmitMidpointPerfAlert();
     const message = error instanceof Error ? error.message : "Unknown error";
     return res.status(500).json({ error: message });
   }
@@ -130,7 +243,20 @@ app.get("/api/ops/metrics", (_req, res) => {
     env: nodeEnv,
     allowedOrigins: [...allowedOriginSet],
     api,
-    midpoint
+    midpoint,
+    midpointPerf: {
+      windowSize: MIDPOINT_METRIC_WINDOW,
+      requestCountWindow: midpointDurationWindow.length,
+      requestCountTotal: midpointTotalRequests,
+      failureCountTotal: midpointTotalFailures,
+      avgMs: Number(average(midpointDurationWindow).toFixed(1)),
+      p50Ms: Math.round(percentile(midpointDurationWindow, 50)),
+      p95Ms: Math.round(percentile(midpointDurationWindow, 95)),
+      avgOdsayCallsPerRequest: Number(average(midpointOdsayDeltaWindow).toFixed(2)),
+      p95WarnThresholdMs: MIDPOINT_P95_WARN_MS,
+      alertWebhookEnabled: Boolean(MIDPOINT_ALERT_WEBHOOK_URL),
+      lastRun: midpointLastRun
+    }
   });
 });
 

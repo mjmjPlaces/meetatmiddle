@@ -35,6 +35,9 @@
   - 하위 호환: `ODSAY_API_KEY`, `ODSAY_WEB_ORIGIN`
 - `DAILY_ODSAY_BUDGET`: 일 ODsay 호출 예산
 - `GEOCODE_CACHE_TTL_MIN`, `ROUTE_CACHE_TTL_MIN`, `LANE_CACHE_TTL_MIN`
+- `MIDPOINT_P95_WARN_MS`: `/api/midpoint` p95 경고 임계치(ms, 기본 8000)
+- `MIDPOINT_ALERT_WEBHOOK_URL`: p95 초과 경고를 보낼 Incoming Webhook URL (선택)
+- `MIDPOINT_ALERT_COOLDOWN_MS`: 경고 재전송 최소 간격(ms, 기본 600000=10분)
 
 ## 운영 API
 - `GET /api/ops/metrics`: API 호출량/캐시 효율/현재 degraded 모드 상태 확인
@@ -63,6 +66,26 @@
     "degradedReason": "",
     "usedMaxCandidates": 20,
     "usedRefineCandidates": 6
+  },
+  "midpointPerf": {
+    "windowSize": 300,
+    "requestCountWindow": 84,
+    "requestCountTotal": 196,
+    "failureCountTotal": 3,
+    "avgMs": 5142.8,
+    "p50Ms": 4320,
+    "p95Ms": 9050,
+    "avgOdsayCallsPerRequest": 17.2,
+    "p95WarnThresholdMs": 8000,
+    "alertWebhookEnabled": false,
+    "lastRun": {
+      "durationMs": 6310,
+      "odsayCalls": 21,
+      "ok": true,
+      "degradedMode": false,
+      "degradedReason": "",
+      "timestamp": "2026-04-25T14:02:21.100Z"
+    }
   }
 }
 ```
@@ -73,6 +96,10 @@
 - `api.cache.route.hitRate`: 0.8 이상 유지 권장 (낮으면 후보 수/TTL 재조정)
 - `midpoint.degradedMode`: `true`면 쿼터 보호 모드 동작 중
 - `midpoint.degradedReason`: 현재는 `odsay_daily_budget_over_90_percent` 값만 사용
+- `midpointPerf.p95Ms`: 목표 8000ms 이하
+- `midpointPerf.avgOdsayCallsPerRequest`: 기존 대비 30% 감소 목표
+- `midpointPerf.failureCountTotal`: 릴리즈 전후 급증 여부 확인
+- `midpointPerf.alertWebhookEnabled`: 외부 경고 전송이 켜졌는지 확인
 - `allowedOrigins`: 실제 운영/프리뷰 도메인이 정확히 포함되어 있는지 점검
 
 ## Vercel + Railway 배포 체크리스트
