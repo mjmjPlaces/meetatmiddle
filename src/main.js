@@ -288,6 +288,20 @@ function setSearchViewVisible(visible) {
   }
 }
 
+function renderResultSkeleton(message = "중간지점 후보를 계산하는 중…") {
+  cardsEl.innerHTML = `
+    <div class="resultSkeletonCard app-fade" aria-hidden="true">
+      <div class="resultSkeletonLine w-36"></div>
+      <div class="resultSkeletonLine w-[72%]"></div>
+      <div class="resultSkeletonLine w-[58%]"></div>
+      <div class="resultSkeletonDivider"></div>
+      <div class="resultSkeletonLine w-[88%]"></div>
+      <div class="resultSkeletonLine w-[64%]"></div>
+    </div>
+  `;
+  resultEl.textContent = message;
+}
+
 function setCandidateMarkersVisible(visible) {
   markersHiddenForSheet = !visible;
   markers.forEach((m) => m.setMap(visible ? map : null));
@@ -1549,9 +1563,13 @@ runBtn.addEventListener("click", async () => {
       transferPenalty: 8
     }
   };
-
-  resultEl.textContent = "중간지점 계산 중...";
-  cardsEl.innerHTML = "";
+  if (friends.length < 2) {
+    resultEl.textContent = "친구는 최소 2명 이상 입력해 주세요.";
+    return;
+  }
+  runBtn.disabled = true;
+  runBtn.classList.add("opacity-70");
+  renderResultSkeleton("중간지점 계산 중… (친구별 이동시간을 수집하는 중)");
   lastSharePayload = null;
   lastOverviewItem = null;
   updateStickyShareButton();
@@ -1564,6 +1582,7 @@ runBtn.addEventListener("click", async () => {
     });
     const data = await res.json();
     if (data.error) {
+      cardsEl.innerHTML = "";
       resultEl.textContent = `계산 실패: ${data.error}`;
       return;
     }
@@ -1579,7 +1598,11 @@ runBtn.addEventListener("click", async () => {
       mapStatusEl.textContent = "지도 SDK 준비 후 자동으로 마커를 표시합니다.";
     }
   } catch (error) {
+    cardsEl.innerHTML = "";
     resultEl.textContent = `요청 실패: ${String(error)}`;
+  } finally {
+    runBtn.disabled = false;
+    runBtn.classList.remove("opacity-70");
   }
 });
 

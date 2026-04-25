@@ -35,6 +35,9 @@
   - 하위 호환: `ODSAY_API_KEY`, `ODSAY_WEB_ORIGIN`
 - `DAILY_ODSAY_BUDGET`: 일 ODsay 호출 예산
 - `GEOCODE_CACHE_TTL_MIN`, `ROUTE_CACHE_TTL_MIN`, `LANE_CACHE_TTL_MIN`
+- `REDIS_URL`: (선택) Railway Redis 연결 URL. 미설정 시 메모리 캐시만 사용
+- `REDIS_ROUTE_CACHE_TTL_SEC`: Redis route 캐시 TTL(초, 권장 3600~7200)
+- `REDIS_ROUTE_CACHE_BUCKET_MIN`: route 캐시 시간 버킷(분, 권장 30~60)
 - `MIDPOINT_P95_WARN_MS`: `/api/midpoint` p95 경고 임계치(ms, 기본 8000)
 - `MIDPOINT_ALERT_WEBHOOK_URL`: p95 초과 경고를 보낼 Incoming Webhook URL (선택)
 - `MIDPOINT_ALERT_COOLDOWN_MS`: 경고 재전송 최소 간격(ms, 기본 600000=10분)
@@ -57,7 +60,14 @@
     "odsayCallsToday": 982,
     "cache": {
       "geocode": { "hits": 340, "misses": 24, "hitRate": 0.934 },
-      "route": { "hits": 1120, "misses": 210, "hitRate": 0.842 },
+      "route": {
+        "hits": 1120,
+        "misses": 210,
+        "hitRate": 0.842,
+        "redisHits": 380,
+        "redisMisses": 140,
+        "redisHitRate": 0.731
+      },
       "lane": { "hits": 188, "misses": 34, "hitRate": 0.847 }
     }
   },
@@ -94,6 +104,7 @@
 - `api.odsayCallsToday`: 일일 예산(`DAILY_ODSAY_BUDGET`) 대비 사용량 체크
 - 사용량이 `DAILY_ODSAY_BUDGET`의 `90%` 이상이면 degraded 모드가 켜지고 후보 수를 자동 축소
 - `api.cache.route.hitRate`: 0.8 이상 유지 권장 (낮으면 후보 수/TTL 재조정)
+- `api.cache.route.redisHitRate`: Redis를 켠 경우 0.2 이상부터 효과 체감 가능
 - `midpoint.degradedMode`: `true`면 쿼터 보호 모드 동작 중
 - `midpoint.degradedReason`: 현재는 `odsay_daily_budget_over_90_percent` 값만 사용
 - `midpointPerf.p95Ms`: 목표 8000ms 이하

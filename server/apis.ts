@@ -2,6 +2,7 @@ import { TTLCache } from "./cache.js";
 import { LOCAL_DEV_FRONTEND_ORIGIN, PRODUCTION_FRONTEND_ORIGIN } from "./constants/public_origins.js";
 import { TokenBucket } from "./rateLimiter.js";
 import { CandidatePoint, Point, RouteResult } from "./types.js";
+import { createClient } from "redis";
 
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -12,6 +13,8 @@ function envInt(name: string, fallback: number): number {
 const geocodeTtlMin = envInt("GEOCODE_CACHE_TTL_MIN", 60 * 24 * 14);
 const routeTtlMin = envInt("ROUTE_CACHE_TTL_MIN", 30);
 const laneTtlMin = envInt("LANE_CACHE_TTL_MIN", 60 * 24);
+const redisRouteTtlSec = envInt("REDIS_ROUTE_CACHE_TTL_SEC", 60 * 60);
+const redisRouteTimeBucketMin = envInt("REDIS_ROUTE_CACHE_BUCKET_MIN", 60);
 
 const geocodeCache = new TTLCache<Point>(geocodeTtlMin * 60 * 1000);
 const routeCache = new TTLCache<RouteResult>(routeTtlMin * 60 * 1000);
@@ -23,7 +26,13 @@ const routeInFlight = new Map<string, Promise<RouteResult>>();
 const laneInFlight = new Map<string, Promise<unknown>>();
 const odsayLimiter = new TokenBucket(8, 4);
 let hasLoggedOdsayEnv = false;
+let hasLoggedRedis = false;
+let redisRetryAt = 0;
+type RedisClient = ReturnType<typeof createClient>;
+let redisClient: RedisClient | null = null;
+let redisConnectInFlight: Promise<RedisClient | null> | null = null;
 const MAX_ODSAY_RETRY = 3;
+const REDIS_RETRY_BACKOFF_MS = 60_000;
 
 const apiMetrics = {
   dateKey: new Date().toISOString().slice(0, 10),
@@ -33,6 +42,8 @@ const apiMetrics = {
   geocodeCacheMisses: 0,
   routeCacheHits: 0,
   routeCacheMisses: 0,
+  routeRedisHits: 0,
+  routeRedisMisses: 0,
   laneCacheHits: 0,
   laneCacheMisses: 0
 };
@@ -47,6 +58,8 @@ function rollMetricsDate(): void {
   apiMetrics.geocodeCacheMisses = 0;
   apiMetrics.routeCacheHits = 0;
   apiMetrics.routeCacheMisses = 0;
+  apiMetrics.routeRedisHits = 0;
+  apiMetrics.routeRedisMisses = 0;
   apiMetrics.laneCacheHits = 0;
   apiMetrics.laneCacheMisses = 0;
 }
@@ -55,6 +68,7 @@ export function getApiMetrics() {
   rollMetricsDate();
   const geocodeTotal = apiMetrics.geocodeCacheHits + apiMetrics.geocodeCacheMisses;
   const routeTotal = apiMetrics.routeCacheHits + apiMetrics.routeCacheMisses;
+  const routeRedisTotal = apiMetrics.routeRedisHits + apiMetrics.routeRedisMisses;
   const laneTotal = apiMetrics.laneCacheHits + apiMetrics.laneCacheMisses;
   return {
     date: apiMetrics.dateKey,
@@ -69,7 +83,10 @@ export function getApiMetrics() {
       route: {
         hits: apiMetrics.routeCacheHits,
         misses: apiMetrics.routeCacheMisses,
-        hitRate: routeTotal ? apiMetrics.routeCacheHits / routeTotal : 0
+        hitRate: routeTotal ? apiMetrics.routeCacheHits / routeTotal : 0,
+        redisHits: apiMetrics.routeRedisHits,
+        redisMisses: apiMetrics.routeRedisMisses,
+        redisHitRate: routeRedisTotal ? apiMetrics.routeRedisHits / routeRedisTotal : 0
       },
       lane: {
         hits: apiMetrics.laneCacheHits,
@@ -99,6 +116,76 @@ function stagedEnv(baseName: string): string {
   const isProd = process.env.NODE_ENV === "production";
   const stageName = `${baseName}_${isProd ? "PROD" : "DEV"}`;
   return optionalEnv(stageName) || optionalEnv(baseName);
+}
+
+function redisRouteCacheKey(key: string): string {
+  return `route:v1:${key}`;
+}
+
+async function getRedisClient(): Promise<RedisClient | null> {
+  const url = optionalEnv("REDIS_URL");
+  if (!url) return null;
+  if (redisClient?.isOpen) return redisClient;
+  if (Date.now() < redisRetryAt) return null;
+  if (redisConnectInFlight) return redisConnectInFlight;
+
+  redisConnectInFlight = (async () => {
+    try {
+      const client = createClient({ url });
+      client.on("error", (error) => {
+        if (!hasLoggedRedis) {
+          console.warn("[Redis] client error", { error: String(error) });
+        }
+      });
+      await client.connect();
+      redisClient = client;
+      if (!hasLoggedRedis) {
+        console.log("[Redis] connected for route cache");
+        hasLoggedRedis = true;
+      }
+      return redisClient;
+    } catch (error) {
+      redisRetryAt = Date.now() + REDIS_RETRY_BACKOFF_MS;
+      console.warn("[Redis] connect failed; fallback to memory cache only", {
+        retryAfterMs: REDIS_RETRY_BACKOFF_MS,
+        error: String(error)
+      });
+      return null;
+    } finally {
+      redisConnectInFlight = null;
+    }
+  })();
+
+  return redisConnectInFlight;
+}
+
+async function getRouteFromRedis(key: string): Promise<RouteResult | null> {
+  const client = await getRedisClient();
+  if (!client) return null;
+  try {
+    const raw = await client.get(redisRouteCacheKey(key));
+    if (!raw) {
+      apiMetrics.routeRedisMisses += 1;
+      return null;
+    }
+    apiMetrics.routeRedisHits += 1;
+    return JSON.parse(raw) as RouteResult;
+  } catch (error) {
+    console.warn("[Redis] route get failed", { error: String(error) });
+    return null;
+  }
+}
+
+async function setRouteToRedis(key: string, value: RouteResult): Promise<void> {
+  const client = await getRedisClient();
+  if (!client) return;
+  try {
+    await client.set(redisRouteCacheKey(key), JSON.stringify(value), {
+      EX: redisRouteTtlSec
+    });
+  } catch (error) {
+    console.warn("[Redis] route set failed", { error: String(error) });
+  }
 }
 
 /** Prevent leaking secrets when logs are shared externally. */
@@ -329,15 +416,19 @@ export async function getTransitRoute(
   debugMeta?: { fromLabel?: string; toLabel?: string }
 ): Promise<RouteResult> {
   rollMetricsDate();
-  // Cache key uses rounded coords to improve hit rate.
-  // Include a time bucket to avoid reusing stale routes for too long.
-  const cacheKey = `route:${pointKey(start)}->${pointKey(end)}:tb=${timeBucketKey(30)}`;
+  // Cache key uses rounded coords + time bucket to reuse nearby-time requests.
+  const cacheKey = `route:${pointKey(start)}->${pointKey(end)}:tb=${timeBucketKey(redisRouteTimeBucketMin)}`;
   const cached = routeCache.get(cacheKey);
   if (cached) {
     apiMetrics.routeCacheHits += 1;
     return cached;
   }
   apiMetrics.routeCacheMisses += 1;
+  const redisCached = await getRouteFromRedis(cacheKey);
+  if (redisCached) {
+    routeCache.set(cacheKey, redisCached);
+    return redisCached;
+  }
 
   const inFlight = routeInFlight.get(cacheKey);
   if (inFlight) return inFlight;
@@ -480,6 +571,7 @@ export async function getTransitRoute(
           fallbackMinutes: fallbackRoute.totalMinutes
         });
         routeCache.set(cacheKey, fallbackRoute);
+        await setRouteToRedis(cacheKey, fallbackRoute);
         return fallbackRoute;
       }
       console.error("[ODsay] no path result", {
@@ -508,6 +600,7 @@ export async function getTransitRoute(
     const transferCount = (best.busTransitCount ?? 0) + (best.subwayTransitCount ?? 0);
     const route = { totalMinutes: best.totalTime, transferCount, raw: body };
     routeCache.set(cacheKey, route);
+    await setRouteToRedis(cacheKey, route);
     return route;
   }
 

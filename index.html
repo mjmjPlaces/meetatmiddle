@@ -108,6 +108,38 @@
       .tap-press:active {
         transform: scale(0.97);
       }
+      .resultSkeletonCard {
+        border: 1px solid #ffd8c8;
+        background: #fffdfb;
+        border-radius: 18px;
+        padding: 14px;
+      }
+      .resultSkeletonLine {
+        height: 12px;
+        border-radius: 999px;
+        margin-top: 8px;
+        background: linear-gradient(
+          90deg,
+          rgba(255, 111, 79, 0.14) 25%,
+          rgba(255, 111, 79, 0.28) 50%,
+          rgba(255, 111, 79, 0.14) 75%
+        );
+        background-size: 220% 100%;
+        animation: skeletonShimmer 1.2s ease-in-out infinite;
+      }
+      .resultSkeletonDivider {
+        height: 1px;
+        margin: 12px 0 6px;
+        background: rgba(255, 111, 79, 0.18);
+      }
+      @keyframes skeletonShimmer {
+        0% {
+          background-position: 200% 0;
+        }
+        100% {
+          background-position: -20% 0;
+        }
+      }
       /* fixed + translateX(-50%) 정렬 버튼: active에서 translate가 덮이면 좌우로 튀어 보임 */
       #stickyShare.tap-press:active {
         transform: translateX(-50%) scale(0.97);
@@ -355,7 +387,7 @@
         }
       }
     </style>
-    <script defer src="/src/main.js?v=20260425-06"></script>
+    <script defer src="/src/main.js?v=20260425-07"></script>
   </head>
   <body class="min-h-screen text-slate-800">
     <div class="app-fade mx-auto w-full max-w-[480px] min-h-screen pb-28">
