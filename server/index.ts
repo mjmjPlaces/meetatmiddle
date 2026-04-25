@@ -75,6 +75,11 @@ app.options("*", cors(corsOptions));
 app.use(express.json());
 app.use(express.static(webRoot));
 
+/** 공유 딥링크 `/s/:sid` — 정적 파일이 없을 때 SPA로 넘김 */
+app.get("/s/:sid", (_req, res) => {
+  res.sendFile(path.join(webRoot, "index.html"));
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });

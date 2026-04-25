@@ -92,13 +92,13 @@ powershell -ExecutionPolicy Bypass -File .\scripts\git-first-push.ps1
 
 프론트(Vercel)와 API(Railway)가 **도메인이 다르므로**, 브라우저는 `src/main.js`의 `RAILWAY_API_ORIGIN`으로 Railway에 **직접** `fetch`합니다.  
 Railway 공개 URL이 바뀌면 해당 상수를 수정한 뒤 다시 배포합니다.  
-CORS는 Railway `ALLOWED_ORIGINS`에 Vercel 도메인을 넣어 두면 됩니다.
+CORS는 Railway `ALLOWED_ORIGINS`에 **실제 웹에서 열리는 프론트 Origin**을 넣어 두면 됩니다. 공유 링크(`samemeet.com`)에서 `/api/share/:sid`를 부를 때도 동일합니다.
 
 ### Railway `ALLOWED_ORIGINS`
 
-Vercel 프로덕션·프리뷰 URL을 콤마로 추가합니다. 예:
+프로덕션·프리뷰 URL을 콤마로 추가합니다. 예:
 
-`https://meetatmiddle-production.up.railway.app,https://midpoint-navigator.vercel.app`
+`https://meetatmiddle-production.up.railway.app,https://samemeet.com,https://midpoint-navigator.vercel.app`
 
 - **끝에 `/` 넣지 않기** — 브라우저 `Origin` 헤더는 슬래시 없이 옵니다 (`https://midpoint-navigator.vercel.app`).
 - 값 수정 후 Railway가 **재배포**될 때까지 잠시 기다리기.

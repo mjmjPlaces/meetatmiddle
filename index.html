@@ -103,10 +103,14 @@
         }
       }
       .tap-press {
-        transition: transform 0.12s ease;
+        transition: transform 0.14s cubic-bezier(0.33, 1, 0.68, 1), box-shadow 0.14s ease;
       }
       .tap-press:active {
-        transform: scale(0.95);
+        transform: scale(0.97);
+      }
+      /* fixed + translateX(-50%) 정렬 버튼: active에서 translate가 덮이면 좌우로 튀어 보임 */
+      #stickyShare.tap-press:active {
+        transform: translateX(-50%) scale(0.97);
       }
       .markerLabel {
         display: inline-flex;
@@ -351,7 +355,7 @@
         }
       }
     </style>
-    <script defer src="./src/main.js?v=20260425-01"></script>
+    <script defer src="./src/main.js?v=20260425-03"></script>
   </head>
   <body class="min-h-screen text-slate-800">
     <div class="app-fade mx-auto w-full max-w-[480px] min-h-screen pb-28">

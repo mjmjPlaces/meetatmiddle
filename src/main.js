@@ -376,18 +376,27 @@ function buildShareUrls(payload) {
   };
 }
 
+/** 공유 카드에 넣는 웹 오리진(로컬에서 공유해도 수신자는 프로덕션으로 연결) */
+function shareLinkOrigin() {
+  return isLocalLikeHost(window.location.hostname) ? PUBLIC_SHARE_ORIGIN : window.location.origin;
+}
+
+/**
+ * sid는 짧은 경로 `/s/:sid`에 두고, 만료·API 실패 시를 대비한 페이로드는 `#share=`에 둔다.
+ * (카카오 인앱 등에서 긴 쿼리가 잘리는 경우가 있어 쿼리 `share`에만 의존하지 않음)
+ */
 function buildShareUrlsFromSid(sid, fallbackPayload = null) {
-  const shareOrigin = isLocalLikeHost(window.location.hostname) ? PUBLIC_SHARE_ORIGIN : window.location.origin;
-  const base = `${shareOrigin}${window.location.pathname}`;
-  const encodedSid = encodeURIComponent(sid);
-  const fallbackQuery = fallbackPayload
-    ? `&share=${encodeURIComponent(toBase64Url(fallbackPayload))}`
-    : "";
-  const rootUrl = `${base}?sid=${encodedSid}${fallbackQuery}`;
+  const origin = shareLinkOrigin();
+  const enc = encodeURIComponent(sid);
+  const hash =
+    fallbackPayload != null
+      ? `#share=${encodeURIComponent(toBase64Url(fallbackPayload))}`
+      : "";
+  const base = `${origin}/s/${enc}`;
   return {
-    rootUrl,
-    mapUrl: `${rootUrl}&view=map`,
-    friendRouteUrl: `${rootUrl}&view=friends`
+    rootUrl: `${base}${hash}`,
+    mapUrl: `${base}?view=map${hash}`,
+    friendRouteUrl: `${base}?view=friends${hash}`
   };
 }
 
@@ -452,9 +461,41 @@ function buildTinyShareFallbackPayload(item, address, reasonText) {
   };
 }
 
+function readSidFromLocation() {
+  const pathMatch = window.location.pathname.match(/^\/s\/([^/]+)\/?$/);
+  if (pathMatch?.[1]) {
+    try {
+      return decodeURIComponent(pathMatch[1]);
+    } catch {
+      return pathMatch[1];
+    }
+  }
+  return new URLSearchParams(window.location.search).get("sid");
+}
+
+function readShareTokenFromLocation() {
+  const params = new URLSearchParams(window.location.search);
+  const fromQuery = params.get("share");
+  if (fromQuery) return fromQuery;
+  const rawHash = window.location.hash.replace(/^#/, "");
+  if (!rawHash) return null;
+  return new URLSearchParams(rawHash).get("share");
+}
+
+function looksLikeShareLinkIntent() {
+  if (/^\/s\/[^/]+/.test(window.location.pathname)) return true;
+  const p = new URLSearchParams(window.location.search);
+  if (p.get("sid") || p.get("share")) return true;
+  if (window.location.hash.includes("share=")) return true;
+  return false;
+}
+
 async function readShareStateFromQuery() {
   const params = new URLSearchParams(window.location.search);
-  const sid = params.get("sid");
+  const view = params.get("view");
+  const sid = readSidFromLocation();
+  const shareToken = readShareTokenFromLocation();
+
   if (sid) {
     try {
       const res = await fetch(shareApiUrl(`/api/share/${encodeURIComponent(sid)}`));
@@ -462,21 +503,18 @@ async function readShareStateFromQuery() {
         const data = await res.json();
         const payload = data?.payload;
         if (payload?.item?.candidate) {
-          const view = params.get("view");
-          return { payload, view };
+          return { payload, view, shareLookup: "sid" };
         }
       }
     } catch {
-      // ignore and try legacy share param
+      // 네트워크/CORS 오류 → 아래 share 토큰으로 시도
     }
   }
-  const token = params.get("share");
-  if (!token) return null;
+  if (!shareToken) return null;
   try {
-    const payload = fromBase64Url(token);
+    const payload = fromBase64Url(shareToken);
     if (!payload?.item?.candidate) return null;
-    const view = params.get("view");
-    return { payload, view };
+    return { payload, view, shareLookup: "token" };
   } catch {
     return null;
   }
@@ -904,10 +942,26 @@ async function shareTopCandidate(item, address, reasonText) {
     friendBlock || "링크에서 확인"
   ];
   const shareItemTitle = shareItemLines.join("\n").slice(0, 500);
-  // Keep Kakao button links as compact and self-contained as possible.
   const tinyFallbackPayload = buildTinyShareFallbackPayload(item, address, reasonText);
-  const shareUrls = buildShareUrls(tinyFallbackPayload);
+  const compactPayload = buildCompactSharePayload(item, address, reasonText);
+  const shareSessionId = await createShareSession(compactPayload);
+  const shareUrls = shareSessionId
+    ? buildShareUrlsFromSid(shareSessionId, tinyFallbackPayload)
+    : buildShareUrls(tinyFallbackPayload);
   const mapOnlyUrl = `https://map.kakao.com/link/map/${encodeURIComponent(destinationName)},${item?.candidate?.lat},${item?.candidate?.lng}`;
+  /** tiny URL만 쓰면 perFriend가 비어 view=friends가 빈약함 → sid가 있을 때만 하단 버튼 노출 */
+  const kakaoShareButtons = shareSessionId
+    ? [
+        {
+          title: "지도에서 보기",
+          link: { mobileWebUrl: shareUrls.mapUrl, webUrl: shareUrls.mapUrl }
+        },
+        {
+          title: "친구 별 경로 보기",
+          link: { mobileWebUrl: shareUrls.friendRouteUrl, webUrl: shareUrls.friendRouteUrl }
+        }
+      ]
+    : undefined;
 
   try {
     window.Kakao.Share.sendDefault({
@@ -921,16 +975,7 @@ async function shareTopCandidate(item, address, reasonText) {
           webUrl: shareUrls.rootUrl
         }
       },
-      buttons: [
-        {
-          title: "지도에서 보기",
-          link: { mobileWebUrl: shareUrls.mapUrl, webUrl: shareUrls.mapUrl }
-        },
-        {
-          title: "친구 별 경로 보기",
-          link: { mobileWebUrl: shareUrls.friendRouteUrl, webUrl: shareUrls.friendRouteUrl }
-        }
-      ],
+      ...(kakaoShareButtons ? { buttons: kakaoShareButtons } : {}),
       itemContent: {
         profileText: "1순위 중간지점",
         titleImageText: shareItemTitle
@@ -948,7 +993,6 @@ async function shareTopCandidate(item, address, reasonText) {
         imageUrl: "https://samemeet.com/samemeet-thumbnail.png",
         link: { mobileWebUrl: mapOnlyUrl, webUrl: mapOnlyUrl }
       },
-      buttons: [{ title: "지도에서 보기", link: { mobileWebUrl: mapOnlyUrl, webUrl: mapOnlyUrl } }],
       itemContent: {
         profileText: "1순위 중간지점",
         titleImageText: shareItemTitle
@@ -1557,5 +1601,18 @@ void (async () => {
       pendingResultsForMap = { results: [sharedState.payload.item], options: sharedOptions };
       mapStatusEl.textContent = "공유 결과를 지도에 표시하는 중...";
     }
+    if (sharedState.shareLookup === "sid" && readSidFromLocation() && window.history?.replaceState) {
+      try {
+        const sid = readSidFromLocation();
+        const origin = window.location.origin;
+        const v = sharedState.view ? `?view=${encodeURIComponent(sharedState.view)}` : "";
+        window.history.replaceState(window.history.state, "", `${origin}/s/${encodeURIComponent(sid ?? "")}${v}`);
+      } catch {
+        // ignore
+      }
+    }
+  } else if (looksLikeShareLinkIntent()) {
+    resultEl.textContent =
+      "공유 링크를 불러오지 못했습니다. 서버에 세션이 없거나(재시작·만료) 앱에서 주소가 잘렸을 수 있어요. 브라우저로 다시 열거나 친구에게 공유를 한 번 더 요청해 주세요.";
   }
 })();
