@@ -401,6 +401,31 @@ function buildShareUrlsFromSid(sid, fallbackPayload = null) {
   };
 }
 
+/** 카카오 링크 필드 길이 제한(초과 시 전송 실패). #share= 해시 제거 후에도 길면 카카오맵 링크로 대체(긴 ?share= 잘라내기 방지). */
+const KAKAO_LINK_URL_MAX = 1000;
+
+function clipUrlsForKakaoShare(urls, mapFallbackUrl) {
+  const trimOne = (u) => {
+    if (!u || typeof u !== "string") return u;
+    if (u.length <= KAKAO_LINK_URL_MAX) return u;
+    const noHash = u.split("#")[0];
+    if (noHash.length <= KAKAO_LINK_URL_MAX) return noHash;
+    return mapFallbackUrl;
+  };
+  return {
+    rootUrl: trimOne(urls.rootUrl),
+    mapUrl: trimOne(urls.mapUrl),
+    friendRouteUrl: trimOne(urls.friendRouteUrl)
+  };
+}
+
+function truncateKakaoField(text, maxChars) {
+  const s = String(text ?? "").replace(/\r\n/g, "\n");
+  if (s.length <= maxChars) return s;
+  if (maxChars <= 1) return "…";
+  return `${s.slice(0, maxChars - 1)}…`;
+}
+
 async function createShareSession(payload) {
   try {
     const res = await fetch(shareApiUrl("/api/share"), {
@@ -942,7 +967,7 @@ async function shareTopCandidate(item, address, reasonText) {
     "친구별 소요시간",
     friendBlock || "링크에서 확인"
   ];
-  const shareItemTitle = shareItemLines.join("\n").slice(0, 500);
+  const shareItemTitle = shareItemLines.join("\n").slice(0, 400);
   const tinyFallbackPayload = buildTinyShareFallbackPayload(item, address, reasonText);
   const compactPayload = buildCompactSharePayload(item, address, reasonText);
   const shareSessionId = await createShareSession(compactPayload);
@@ -950,36 +975,44 @@ async function shareTopCandidate(item, address, reasonText) {
     ? buildShareUrlsFromSid(shareSessionId, tinyFallbackPayload)
     : buildShareUrls(tinyFallbackPayload);
   const mapOnlyUrl = `https://map.kakao.com/link/map/${encodeURIComponent(destinationName)},${item?.candidate?.lat},${item?.candidate?.lng}`;
+  const kakaoUrls = clipUrlsForKakaoShare(shareUrls, mapOnlyUrl);
   /** tiny URL만 쓰면 perFriend가 비어 view=friends가 빈약함 → sid가 있을 때만 하단 버튼 노출 */
   const kakaoShareButtons = shareSessionId
     ? [
         {
           title: "지도에서 보기",
-          link: { mobileWebUrl: shareUrls.mapUrl, webUrl: shareUrls.mapUrl }
+          link: { mobileWebUrl: kakaoUrls.mapUrl, webUrl: kakaoUrls.mapUrl }
         },
         {
           title: "친구 별 경로 보기",
-          link: { mobileWebUrl: shareUrls.friendRouteUrl, webUrl: shareUrls.friendRouteUrl }
+          link: { mobileWebUrl: kakaoUrls.friendRouteUrl, webUrl: kakaoUrls.friendRouteUrl }
         }
       ]
     : undefined;
+
+  const kakaoTitle = truncateKakaoField(`쌤밋 · 우리 모임 1순위 중간지점: ${destinationName}`, 80);
+  const kakaoDescription = truncateKakaoField(
+    `${reasonText} · 평균 ${avgText} / 최대 ${maxText}\n${address}`,
+    160
+  );
+  const kakaoItemText = truncateKakaoField(shareItemTitle, 180);
 
   try {
     window.Kakao.Share.sendDefault({
       objectType: "feed",
       content: {
-        title: `쌤밋 · 우리 모임 1순위 중간지점: ${destinationName}`,
-        description: `${reasonText} · 평균 ${avgText} / 최대 ${maxText}\n${address}`,
+        title: kakaoTitle,
+        description: kakaoDescription,
         imageUrl: "https://samemeet.com/samemeet-thumbnail.png",
         link: {
-          mobileWebUrl: shareUrls.rootUrl,
-          webUrl: shareUrls.rootUrl
+          mobileWebUrl: kakaoUrls.rootUrl,
+          webUrl: kakaoUrls.rootUrl
         }
       },
       ...(kakaoShareButtons ? { buttons: kakaoShareButtons } : {}),
       itemContent: {
-        profileText: "1순위 중간지점",
-        titleImageText: shareItemTitle
+        profileText: truncateKakaoField("1순위 중간지점", 24),
+        titleImageText: kakaoItemText
       }
     });
   } catch (error) {
@@ -989,14 +1022,14 @@ async function shareTopCandidate(item, address, reasonText) {
     window.Kakao.Share.sendDefault({
       objectType: "feed",
       content: {
-        title: `쌤밋 · 우리 모임 1순위 중간지점: ${destinationName}`,
-        description: `${reasonText} · 평균 ${avgText} / 최대 ${maxText}\n${address}`,
+        title: kakaoTitle,
+        description: kakaoDescription,
         imageUrl: "https://samemeet.com/samemeet-thumbnail.png",
         link: { mobileWebUrl: mapOnlyUrl, webUrl: mapOnlyUrl }
       },
       itemContent: {
-        profileText: "1순위 중간지점",
-        titleImageText: shareItemTitle
+        profileText: truncateKakaoField("1순위 중간지점", 24),
+        titleImageText: kakaoItemText
       }
     });
   }
