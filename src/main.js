@@ -1065,7 +1065,7 @@ function openSheet() {
   if (map && isMapReady) {
     map.relayout();
   }
-  mapWrapEl?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  mapWrapEl?.scrollIntoView({ behavior: "auto", block: "nearest" });
 }
 
 function closeSheet() {
@@ -1226,18 +1226,14 @@ async function drawRouteOnMap(raw) {
 async function redrawMapOverviewRoutes(item) {
   if (!isMapReady || !map || !item?.perFriend?.length) return 0;
   const bounds = new kakao.maps.LatLngBounds();
-  let totalPoints = 0;
   const perFriend = item.perFriend;
-  for (let i = 0; i < perFriend.length; i += 1) {
-    const pf = perFriend[i];
-    const color = friendRouteColor(i);
-    const n = await appendPolylinesFromRaw(
-      pf?.route?.raw,
-      () => color,
-      bounds
-    );
-    totalPoints += n;
-  }
+  /** 친구마다 loadLane이 순차면 RTT가 누적돼 모바일·크로스오리진에서 체감이 크게 느려짐 → 병렬 요청 */
+  const counts = await Promise.all(
+    perFriend.map((pf, i) =>
+      appendPolylinesFromRaw(pf?.route?.raw, () => friendRouteColor(i), bounds)
+    )
+  );
+  const totalPoints = counts.reduce((a, n) => a + n, 0);
   const c = item?.candidate;
   if (c?.lat != null && c?.lng != null) {
     bounds.extend(new kakao.maps.LatLng(c.lat, c.lng));
@@ -1325,6 +1321,13 @@ async function openCandidateDetails(item, address) {
   sheetSubtitleEl.textContent = address ? `주소: ${address}` : "";
 
   const perFriend = item?.perFriend ?? [];
+  if (!perFriend.length) {
+    renderFriendTimeList(perFriend, "", () => {});
+    renderPathList([]);
+    openSheet();
+    return;
+  }
+
   let selectedFriendId = perFriend[0]?.friendId ?? "";
   const indexByFriendId = new Map(perFriend.map((pf, idx) => [pf.friendId, idx]));
 
@@ -1346,9 +1349,17 @@ async function openCandidateDetails(item, address) {
       endLabel: `🚩 도착(${item?.candidate?.name ?? "중간지점"})`
     });
   };
-  await update();
 
+  renderFriendTimeList(perFriend, selectedFriendId, (friendId) => {
+    selectedFriendId = friendId;
+    void update();
+  });
+  pathListEl.innerHTML = "";
+  const loadingLi = document.createElement("li");
+  loadingLi.textContent = "노선 지도를 불러오는 중…";
+  pathListEl.appendChild(loadingLi);
   openSheet();
+  await update();
 }
 
 async function renderTopCandidates(results, options = {}) {
@@ -1417,7 +1428,7 @@ async function renderTopCandidates(results, options = {}) {
   updateStickyShareButton();
 
   lastOverviewItem = item;
-  mapStatusEl.textContent = "친구별 경로를 지도에 그리는 중...";
+  mapStatusEl.textContent = "친구별 경로를 지도에 그리는 중…";
   const polyPts = await redrawMapOverviewRoutes(item);
   if (!polyPts) {
     const pts = [];
