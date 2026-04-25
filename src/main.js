@@ -81,6 +81,8 @@ let lastShareErrorDetail = "";
 let lastOverviewItem = null;
 /** 결과 화면에서 친구 출발지 핀(세부 경로 모드에서는 잠시 숨김) */
 let friendOverviewEntries = [];
+let midpointLoadingTimer = null;
+let midpointLoadingProgress = 0;
 
 const FRIEND_ROUTE_COLORS = ["#E53935", "#1E88E5", "#43A047", "#FB8C00", "#8E24AA", "#00897B"];
 
@@ -288,18 +290,58 @@ function setSearchViewVisible(visible) {
   }
 }
 
+function stopMidpointLoadingIndicator() {
+  if (midpointLoadingTimer) {
+    clearInterval(midpointLoadingTimer);
+    midpointLoadingTimer = null;
+  }
+}
+
 function renderResultSkeleton(message = "중간지점 후보를 계산하는 중…") {
   cardsEl.innerHTML = `
     <div class="resultSkeletonCard app-fade" aria-hidden="true">
-      <div class="resultSkeletonLine w-36"></div>
-      <div class="resultSkeletonLine w-[72%]"></div>
-      <div class="resultSkeletonLine w-[58%]"></div>
+      <div class="resultSkeletonProgressWrap">
+        <div class="resultSkeletonProgressFill" style="width:0%"></div>
+      </div>
+      <div class="resultSkeletonProgressLabel">진행률 0%</div>
+      <div class="resultSkeletonLine w-36" style="animation-delay:0ms"></div>
+      <div class="resultSkeletonLine w-[72%]" style="animation-delay:120ms"></div>
+      <div class="resultSkeletonLine w-[58%]" style="animation-delay:220ms"></div>
       <div class="resultSkeletonDivider"></div>
-      <div class="resultSkeletonLine w-[88%]"></div>
-      <div class="resultSkeletonLine w-[64%]"></div>
+      <div class="resultSkeletonLine w-[88%]" style="animation-delay:340ms"></div>
+      <div class="resultSkeletonLine w-[64%]" style="animation-delay:440ms"></div>
+      <div class="resultSkeletonPulseDot" aria-hidden="true"></div>
     </div>
   `;
   resultEl.textContent = message;
+}
+
+function updateMidpointLoadingProgress(nextValue) {
+  midpointLoadingProgress = Math.max(0, Math.min(100, Math.round(nextValue)));
+  const fillEl = cardsEl.querySelector(".resultSkeletonProgressFill");
+  if (fillEl) fillEl.style.width = `${midpointLoadingProgress}%`;
+  const labelEl = cardsEl.querySelector(".resultSkeletonProgressLabel");
+  if (labelEl) labelEl.textContent = `진행률 ${midpointLoadingProgress}%`;
+}
+
+function startMidpointLoadingIndicator() {
+  stopMidpointLoadingIndicator();
+  midpointLoadingProgress = 0;
+  const phases = [
+    "중간지점 계산 중… (1/4 친구별 이동시간을 수집하는 중)",
+    "중간지점 계산 중… (2/4 후보 지점을 정렬하는 중)",
+    "중간지점 계산 중… (3/4 최적 후보를 비교하는 중)",
+    "중간지점 계산 중… (4/4 결과 카드를 준비하는 중)"
+  ];
+  let idx = 0;
+  updateMidpointLoadingProgress(0);
+  resultEl.textContent = phases[idx];
+  midpointLoadingTimer = setInterval(() => {
+    idx = (idx + 1) % phases.length;
+    const delta = midpointLoadingProgress < 55 ? 7 : midpointLoadingProgress < 80 ? 4 : 2;
+    updateMidpointLoadingProgress(Math.min(95, midpointLoadingProgress + delta));
+    resultEl.textContent = phases[idx];
+  }, 1100);
 }
 
 function setCandidateMarkersVisible(visible) {
@@ -1570,6 +1612,7 @@ runBtn.addEventListener("click", async () => {
   runBtn.disabled = true;
   runBtn.classList.add("opacity-70");
   renderResultSkeleton("중간지점 계산 중… (친구별 이동시간을 수집하는 중)");
+  startMidpointLoadingIndicator();
   lastSharePayload = null;
   lastOverviewItem = null;
   updateStickyShareButton();
@@ -1582,6 +1625,7 @@ runBtn.addEventListener("click", async () => {
     });
     const data = await res.json();
     if (data.error) {
+      stopMidpointLoadingIndicator();
       cardsEl.innerHTML = "";
       resultEl.textContent = `계산 실패: ${data.error}`;
       return;
@@ -1590,6 +1634,7 @@ runBtn.addEventListener("click", async () => {
     if (results.length) {
       setSearchViewVisible(false);
     }
+    updateMidpointLoadingProgress(100);
     resultEl.textContent = "중간지점 계산 완료.";
     if (isMapReady) {
       await renderTopCandidates(results);
@@ -1598,9 +1643,11 @@ runBtn.addEventListener("click", async () => {
       mapStatusEl.textContent = "지도 SDK 준비 후 자동으로 마커를 표시합니다.";
     }
   } catch (error) {
+    stopMidpointLoadingIndicator();
     cardsEl.innerHTML = "";
     resultEl.textContent = `요청 실패: ${String(error)}`;
   } finally {
+    stopMidpointLoadingIndicator();
     runBtn.disabled = false;
     runBtn.classList.remove("opacity-70");
   }

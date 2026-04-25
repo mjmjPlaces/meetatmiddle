@@ -114,23 +114,54 @@
         border-radius: 18px;
         padding: 14px;
       }
+      .resultSkeletonProgressWrap {
+        width: 100%;
+        height: 8px;
+        border-radius: 999px;
+        background: rgba(255, 111, 79, 0.15);
+        overflow: hidden;
+      }
+      .resultSkeletonProgressFill {
+        height: 100%;
+        width: 0%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #ff8e6c, #ff6f4f);
+        transition: width 0.45s ease;
+      }
+      .resultSkeletonProgressLabel {
+        margin-top: 6px;
+        font-size: 11px;
+        font-weight: 800;
+        color: #b45309;
+        letter-spacing: 0.02em;
+      }
       .resultSkeletonLine {
         height: 12px;
         border-radius: 999px;
         margin-top: 8px;
         background: linear-gradient(
           90deg,
-          rgba(255, 111, 79, 0.14) 25%,
-          rgba(255, 111, 79, 0.28) 50%,
-          rgba(255, 111, 79, 0.14) 75%
+          rgba(255, 111, 79, 0.1) 20%,
+          rgba(255, 111, 79, 0.34) 45%,
+          rgba(255, 170, 145, 0.4) 55%,
+          rgba(255, 111, 79, 0.1) 80%
         );
-        background-size: 220% 100%;
-        animation: skeletonShimmer 1.2s ease-in-out infinite;
+        background-size: 280% 100%;
+        animation: skeletonShimmer 1.05s linear infinite;
       }
       .resultSkeletonDivider {
         height: 1px;
         margin: 12px 0 6px;
         background: rgba(255, 111, 79, 0.18);
+      }
+      .resultSkeletonPulseDot {
+        width: 10px;
+        height: 10px;
+        margin-top: 10px;
+        border-radius: 999px;
+        background: rgba(255, 111, 79, 0.75);
+        box-shadow: 0 0 0 0 rgba(255, 111, 79, 0.45);
+        animation: skeletonPulse 1.4s ease-out infinite;
       }
       @keyframes skeletonShimmer {
         0% {
@@ -138,6 +169,20 @@
         }
         100% {
           background-position: -20% 0;
+        }
+      }
+      @keyframes skeletonPulse {
+        0% {
+          transform: scale(0.85);
+          box-shadow: 0 0 0 0 rgba(255, 111, 79, 0.45);
+        }
+        70% {
+          transform: scale(1);
+          box-shadow: 0 0 0 14px rgba(255, 111, 79, 0);
+        }
+        100% {
+          transform: scale(0.85);
+          box-shadow: 0 0 0 0 rgba(255, 111, 79, 0);
         }
       }
       /* fixed + translateX(-50%) 정렬 버튼: active에서 translate가 덮이면 좌우로 튀어 보임 */
@@ -387,7 +432,7 @@
         }
       }
     </style>
-    <script defer src="/src/main.js?v=20260425-07"></script>
+    <script defer src="/src/main.js?v=20260425-09"></script>
   </head>
   <body class="min-h-screen text-slate-800">
     <div class="app-fade mx-auto w-full max-w-[480px] min-h-screen pb-28">
