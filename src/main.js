@@ -88,6 +88,10 @@ function friendRouteColor(index) {
   return FRIEND_ROUTE_COLORS[index % FRIEND_ROUTE_COLORS.length];
 }
 
+/**
+ * public-config fetch + dapi 스크립트 onload까지 await 한 뒤 maps.load로 지도를 연다.
+ * (이전: fetch가 느리면 5초 폴링이 먼저 끝나 SDK가 늦게 와도 init이 영원히 안 돌 수 있음)
+ */
 async function injectKakaoSdk() {
   if (sdkInjected) return;
   sdkInjected = true;
@@ -98,7 +102,7 @@ async function injectKakaoSdk() {
     const data = await res.json();
     kakaoJsKey = data?.kakaoJsKey || "";
   } catch {
-    // ignore
+    kakaoJsKey = "";
   }
   if (!kakaoJsKey) {
     mapStatusEl.textContent =
@@ -115,17 +119,41 @@ async function injectKakaoSdk() {
     "&autoload=false" +
     `&_=${cacheBust}`;
   script.async = true;
-  script.onload = () => {
-    window.__onKakaoSdkLoad?.();
-    mapStatusEl.textContent = "Kakao SDK 로드 완료. 초기화 중...";
-  };
-  script.onerror = () => {
-    window.__onKakaoSdkError?.();
-    mapStatusEl.textContent =
-      window.__kakaoSdk?.errorDetail ||
-      "브라우저가 Kakao SDK 스크립트를 로드하지 못했습니다.";
-  };
-  document.head.appendChild(script);
+
+  try {
+    await new Promise((resolve, reject) => {
+      script.onload = () => {
+        window.__onKakaoSdkLoad?.();
+        mapStatusEl.textContent = "Kakao SDK 로드 완료. 초기화 중...";
+        resolve();
+      };
+      script.onerror = () => {
+        window.__onKakaoSdkError?.();
+        mapStatusEl.textContent =
+          window.__kakaoSdk?.errorDetail ||
+          "브라우저가 Kakao SDK 스크립트를 로드하지 못했습니다.";
+        reject(new Error("kakao maps script failed"));
+      };
+      document.head.appendChild(script);
+    });
+  } catch {
+    return;
+  }
+
+  if (!window.kakao?.maps?.load) {
+    mapStatusEl.textContent = "Kakao maps API(load)를 찾지 못했습니다. 도메인 허용·스크립트 차단을 확인해 주세요.";
+    return;
+  }
+  kakao.maps.load(() => {
+    initMap();
+    requestAnimationFrame(() => {
+      try {
+        map?.relayout?.();
+      } catch {
+        // ignore
+      }
+    });
+  });
 }
 
 async function ensureKakaoShareReady() {
@@ -191,35 +219,8 @@ function initMap() {
 function ensureMapReady() {
   if (isMapReady || mapInitTried) return;
   mapInitTried = true;
-
-  let attempts = 0;
-  const maxAttempts = 20;
-  void injectKakaoSdk();
   mapStatusEl.textContent = "지도 SDK 로딩 중...";
-  const timer = setInterval(() => {
-    attempts += 1;
-    mapStatusEl.textContent = `지도 SDK 로딩 중... (${attempts}/${maxAttempts})`;
-    if (window.__kakaoSdk?.errored) {
-      clearInterval(timer);
-      mapStatusEl.textContent =
-        window.__kakaoSdk.errorDetail ||
-        "Kakao 지도 SDK 로드에 실패했습니다. 네트워크 또는 도메인 허용 설정을 확인해 주세요.";
-      return;
-    }
-    if (window.kakao?.maps?.load) {
-      clearInterval(timer);
-      kakao.maps.load(() => {
-        initMap();
-      });
-      return;
-    }
-
-    if (attempts >= maxAttempts) {
-      clearInterval(timer);
-      mapStatusEl.textContent =
-        "Kakao 지도 SDK 로드에 실패했습니다. 네트워크 또는 도메인 허용 설정을 확인해 주세요.";
-    }
-  }, 250);
+  void injectKakaoSdk();
 }
 
 function clearFriendOverviewPins() {
