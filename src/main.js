@@ -882,12 +882,28 @@ async function shareTopCandidate(item, address, reasonText) {
     return;
   }
 
-  const friendSummary = (item?.perFriend ?? [])
-    .map((pf) => `${pf.friendName}: ${pf?.route?.totalMinutes ?? "?"}분`)
-    .join(" | ");
   const avgText = `${Math.round(item?.averageMinutes ?? 0)}분`;
   const maxText = `${Math.round(item?.maxMinutes ?? 0)}분`;
   const destinationName = item?.candidate?.name ?? "추천 지점";
+  const addressOneLine = (address || "").replace(/\s+/g, " ").trim();
+  const addressShort =
+    addressOneLine.length > 42 ? `${addressOneLine.slice(0, 40)}…` : addressOneLine;
+  const friendBlock = (item?.perFriend ?? [])
+    .map(
+      (pf) =>
+        `${pf.friendName} ${pf?.route?.totalMinutes ?? "?"}분 (환승 ${pf?.route?.transferCount ?? "?"})`
+    )
+    .join("\n");
+  /** 카톡 카드: 작은 라벨은 구역, 본문은 선정 장소 → 요약·주소 → 친구별 시간 */
+  const shareItemLines = [
+    destinationName,
+    `평균 ${avgText} · 최대 ${maxText}`,
+    ...(addressShort ? [addressShort] : []),
+    "",
+    "친구별 소요시간",
+    friendBlock || "링크에서 확인"
+  ];
+  const shareItemTitle = shareItemLines.join("\n").slice(0, 500);
   // Keep Kakao button links as compact and self-contained as possible.
   const tinyFallbackPayload = buildTinyShareFallbackPayload(item, address, reasonText);
   const shareUrls = buildShareUrls(tinyFallbackPayload);
@@ -916,8 +932,8 @@ async function shareTopCandidate(item, address, reasonText) {
         }
       ],
       itemContent: {
-        profileText: "친구별 예상 소요시간",
-        titleImageText: friendSummary || "상세 경로는 서비스에서 확인해 주세요."
+        profileText: "1순위 중간지점",
+        titleImageText: shareItemTitle
       }
     });
   } catch (error) {
@@ -932,7 +948,11 @@ async function shareTopCandidate(item, address, reasonText) {
         imageUrl: "https://samemeet.com/samemeet-thumbnail.png",
         link: { mobileWebUrl: mapOnlyUrl, webUrl: mapOnlyUrl }
       },
-      buttons: [{ title: "지도에서 보기", link: { mobileWebUrl: mapOnlyUrl, webUrl: mapOnlyUrl } }]
+      buttons: [{ title: "지도에서 보기", link: { mobileWebUrl: mapOnlyUrl, webUrl: mapOnlyUrl } }],
+      itemContent: {
+        profileText: "1순위 중간지점",
+        titleImageText: shareItemTitle
+      }
     });
   }
 }
