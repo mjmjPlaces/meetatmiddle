@@ -27,7 +27,8 @@ const midpointRunMeta = {
   autoRebalanced: false,
   autoRebalanceReason: "",
   fairnessModeApplied: false,
-  fairnessModeReason: ""
+  fairnessModeReason: "",
+  fairnessSecondaryApplied: false
 };
 
 export function getMidpointRunMeta() {
@@ -68,6 +69,24 @@ function applyFairnessFirstRanking(
     .filter((w) => !fairnessIds.has(w.ev.candidate.id))
     .sort((a, b) => a.ev.score - b.ev.score);
   return [...fairnessSorted, ...restSorted].map((w) => w.ev);
+}
+
+function pickFairnessSecondary(
+  evaluations: CandidateEvaluation[],
+  poolSize: number
+): CandidateEvaluation | null {
+  if (!Array.isArray(evaluations) || evaluations.length < 2) return null;
+  const pool = evaluations.slice(1, Math.max(2, poolSize));
+  if (!pool.length) return null;
+  return [...pool].sort((a, b) => {
+    const gapA = friendTimeGapMinutes(a.perFriend);
+    const gapB = friendTimeGapMinutes(b.perFriend);
+    if (gapA !== gapB) return gapA - gapB;
+    const commerceA = commerceScaleBonus(a.candidate.name);
+    const commerceB = commerceScaleBonus(b.candidate.name);
+    if (commerceA !== commerceB) return commerceB - commerceA;
+    return a.score - b.score;
+  })[0] ?? null;
 }
 
 function centroid(points: Point[]): Point {
@@ -269,8 +288,12 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
   const autoRebalanceGapMin = Number(process.env.AUTO_REBALANCE_GAP_MIN ?? 30);
   const autoRebalanceMaxCandidates = Number(process.env.AUTO_REBALANCE_MAX_CANDIDATES ?? 60);
   const autoRebalanceRefineCandidates = Number(process.env.AUTO_REBALANCE_REFINE_CANDIDATES ?? 24);
-  const fairnessModeGapMin = Number(process.env.FAIRNESS_MODE_GAP_MIN ?? 35);
-  const fairnessModeGapWindowMin = Number(process.env.FAIRNESS_MODE_GAP_WINDOW_MIN ?? 5);
+  const fairnessModeGapMin = Number(process.env.FAIRNESS_MODE_GAP_MIN ?? 30);
+  const fairnessModeGapWindowMin = Number(process.env.FAIRNESS_MODE_GAP_WINDOW_MIN ?? 8);
+  const twoUserRefineMin = Number(process.env.TWO_USER_REFINE_MIN ?? 20);
+  const extremeGapPenaltyThresholdMin = Number(process.env.EXTREME_GAP_PENALTY_THRESHOLD_MIN ?? 35);
+  const extremeGapPenaltyPerMinute = Number(process.env.EXTREME_GAP_PENALTY_PER_MINUTE ?? 1.2);
+  const fairnessSecondaryPoolSize = Number(process.env.FAIRNESS_SECONDARY_POOL_SIZE ?? 6);
   let apiCallCount = 0;
 
   const dailyBudget = Number(process.env.DAILY_ODSAY_BUDGET ?? 15000);
@@ -284,6 +307,7 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
   midpointRunMeta.autoRebalanceReason = "";
   midpointRunMeta.fairnessModeApplied = false;
   midpointRunMeta.fairnessModeReason = "";
+  midpointRunMeta.fairnessSecondaryApplied = false;
   if (budgetRatio >= 0.9) {
     maxCandidates = Math.min(maxCandidates, 8);
     refineCandidates = Math.min(refineCandidates, 3);
@@ -310,6 +334,10 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
       lng: f.point.lng
     }))
   );
+  if (friendPoints.length === 2 && !midpointRunMeta.degradedMode) {
+    refineCandidates = Math.max(refineCandidates, Math.min(twoUserRefineMin, maxCandidates));
+    midpointRunMeta.usedRefineCandidates = refineCandidates;
+  }
 
   const center = centroid(friendPoints.map((f) => f.point));
   async function evaluateCandidates(currentMaxCandidates: number, currentRefineCandidates: number) {
@@ -392,26 +420,44 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
         maxMinutes: max
       };
 
-      evaluation.score = scoreBalanced(evaluation, { transferPenalty });
-
+      const baseBalancedScore = scoreBalanced(evaluation, { transferPenalty });
+      let tierAdjust = 0;
       if (!evaluation.candidate.isPriority) {
-        evaluation.score += 10;
+        tierAdjust += 10;
       } else if (evaluation.candidate.tier === 1) {
-        evaluation.score -= 6;
+        tierAdjust -= 6;
       } else if (evaluation.candidate.tier === 2) {
-        evaluation.score -= 3;
+        tierAdjust -= 3;
       } else if (evaluation.candidate.tier === 3) {
-        evaluation.score -= 1.5;
+        tierAdjust -= 1.5;
       }
-      evaluation.score -= commerceScaleBonus(evaluation.candidate.name);
+      const commerceAdjust = -commerceScaleBonus(evaluation.candidate.name);
+      let extremeGapAdjust = 0;
+      const gapMinutes = friendTimeGapMinutes(evaluation.perFriend);
+      if (gapMinutes > extremeGapPenaltyThresholdMin) {
+        extremeGapAdjust =
+          (gapMinutes - extremeGapPenaltyThresholdMin) * Math.max(0, extremeGapPenaltyPerMinute);
+      }
+      evaluation.score = baseBalancedScore + tierAdjust + commerceAdjust + extremeGapAdjust;
 
+      let expressAdjust = 0;
       const farRoutes = evaluation.perFriend.filter((p) => p.route.totalMinutes >= farMinutesThreshold);
       if (farRoutes.length > 0) {
         const redBusCount = farRoutes.filter((p) => hasExpressRedBus(p.route.raw)).length;
         if (redBusCount > 0) {
-          evaluation.score -= redBusCount * expressBusBonus;
+          expressAdjust = -(redBusCount * expressBusBonus);
+          evaluation.score += expressAdjust;
         }
       }
+      evaluation.scoreBreakdown = {
+        baseBalancedScore,
+        tierAdjust,
+        commerceAdjust,
+        expressAdjust,
+        extremeGapAdjust,
+        finalScore: evaluation.score,
+        gapMinutes
+      };
 
       evaluations.push(evaluation);
       bestScore = Math.min(bestScore, evaluation.score);
@@ -462,6 +508,19 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
     }
     finalEvaluations = reordered;
   }
+  if (friendPoints.length === 2 && finalEvaluations.length >= 2) {
+    const topGapAfterFairness = friendTimeGapMinutes(finalEvaluations[0].perFriend);
+    if (topGapAfterFairness >= fairnessModeGapMin) {
+      const secondary = pickFairnessSecondary(finalEvaluations, fairnessSecondaryPoolSize);
+      if (secondary && secondary.candidate.id !== finalEvaluations[0].candidate.id) {
+        const rest = finalEvaluations.filter(
+          (ev) => ev.candidate.id !== finalEvaluations[0].candidate.id && ev.candidate.id !== secondary.candidate.id
+        );
+        finalEvaluations = [finalEvaluations[0], secondary, ...rest];
+        midpointRunMeta.fairnessSecondaryApplied = true;
+      }
+    }
+  }
 
   console.log("[Midpoint] evaluation stats", {
     candidateCount: evalRun.candidateCount,
@@ -474,6 +533,7 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
     autoRebalanceReason: midpointRunMeta.autoRebalanceReason,
     fairnessModeApplied: midpointRunMeta.fairnessModeApplied,
     fairnessModeReason: midpointRunMeta.fairnessModeReason,
+    fairnessSecondaryApplied: midpointRunMeta.fairnessSecondaryApplied,
     elapsedMs: Date.now() - startedAt
   });
 
