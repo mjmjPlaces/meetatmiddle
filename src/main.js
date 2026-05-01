@@ -1579,6 +1579,7 @@ async function renderTopCandidates(results, options = {}) {
   })();
   const item = shownItems[0];
   lastResults = shownItems;
+  let selectedCardIndex = 0;
   if (dualMode) {
     const compareBanner = document.createElement("div");
     compareBanner.className =
@@ -1602,52 +1603,68 @@ async function renderTopCandidates(results, options = {}) {
     meta: { dualMode }
   }));
   void recordSessionEvents(sharedEvents);
+  const candidateCards = [];
+  const candidateAddresses = [];
 
-  const { lat, lng, name } = item.candidate;
-  const address = options?.preferredAddress || (await reverseGeocode(lat, lng));
-  const reasonText = buildReasonSummary(item);
-  const recommendationStrength = recommendationStrengthLabel(item?.candidate?.tier);
-  const suitability = suitabilityLabel(item?.candidate?.tier, item?.candidate?.isPriority);
-  const contextLabel = hotplaceAccessibilityLabel(item);
-  const meetingIndex = meetingIndexScore(item);
-  const shiftedCandidates = String(item?.candidate?.shiftedFrom ?? "")
-    .split(",")
-    .map((v) => v.trim())
-    .filter(Boolean);
-  const shiftedNote = shiftedCandidates.length
-    ? `동일 환승거점 후보 ${shiftedCandidates.length}개를 하나로 묶어 비교했어요.`
-    : "";
-  const spreadMinutes = getFriendTimeGapMinutes(item);
-  const balanceNote =
-    spreadMinutes <= 8
-      ? `친구 간 시간차가 작아 균형이 좋아요 (시간차 ${spreadMinutes}분).`
-      : `친구 간 이동시간 차이를 함께 고려했어요 (시간차 ${spreadMinutes}분).`;
-
-  const position = new kakao.maps.LatLng(lat, lng);
-  const candidateMarker = addCandidateHighlightPin(position);
-  const placement = pickRecommendCardPlacement(item?.candidate, item?.perFriend);
-  const avoidancePoints = [
-    item?.candidate,
-    ...(item?.perFriend ?? []).map((pf) => pf?.startPoint).filter(Boolean)
-  ];
-  addCandidateRecommendCard(position, { name, address, reasonText, placement, avoidancePoints });
-  if (candidateMarker) {
-    kakao.maps.event.addListener(candidateMarker, "dblclick", () => void openCandidateDetails(item, address));
+  async function renderOverviewCandidate(candidateItem, candidateAddress, candidateReasonText) {
+    clearMapObjects();
+    const { lat, lng, name } = candidateItem.candidate;
+    const position = new kakao.maps.LatLng(lat, lng);
+    const candidateMarker = addCandidateHighlightPin(position);
+    const placement = pickRecommendCardPlacement(candidateItem?.candidate, candidateItem?.perFriend);
+    const avoidancePoints = [
+      candidateItem?.candidate,
+      ...(candidateItem?.perFriend ?? []).map((pf) => pf?.startPoint).filter(Boolean)
+    ];
+    addCandidateRecommendCard(position, {
+      name,
+      address: candidateAddress,
+      reasonText: candidateReasonText,
+      placement,
+      avoidancePoints
+    });
+    if (candidateMarker) {
+      kakao.maps.event.addListener(candidateMarker, "dblclick", () =>
+        void openCandidateDetails(candidateItem, candidateAddress)
+      );
+    }
+    const perFriends = candidateItem?.perFriend ?? [];
+    perFriends.forEach((pf, i) => {
+      addFriendOverviewPin(
+        pf?.startPoint,
+        pf?.friendName ?? `친구${i + 1}`,
+        friendRouteColor(i)
+      );
+    });
+    lastOverviewItem = candidateItem;
+    mapStatusEl.textContent = `${candidateItem?.candidate?.name ?? "추천지"} 기준 경로를 지도에 표시했습니다.`;
+    const polyPts = await redrawMapOverviewRoutes(candidateItem);
+    if (!polyPts) {
+      const pts = [];
+      if (candidateItem.candidate) pts.push(candidateItem.candidate);
+      perFriends.forEach((pf) => {
+        if (pf?.startPoint) pts.push(pf.startPoint);
+      });
+      if (pts.length) fitBounds(pts);
+    }
   }
 
-  const perFriends = item?.perFriend ?? [];
-  perFriends.forEach((pf, i) => {
-    addFriendOverviewPin(
-      pf?.startPoint,
-      pf?.friendName ?? `친구${i + 1}`,
-      friendRouteColor(i)
-    );
-  });
+  function refreshCandidateCardSelectionUI() {
+    candidateCards.forEach((cardEl, idx) => {
+      const active = idx === selectedCardIndex;
+      cardEl.classList.toggle("ring-2", active);
+      cardEl.classList.toggle("ring-coral-300", active);
+      cardEl.classList.toggle("border-coral-300", active);
+    });
+  }
 
   for (let idx = 0; idx < shownItems.length; idx += 1) {
     const candidateItem = shownItems[idx];
     const candidateAddress =
-      idx === 0 ? address : await reverseGeocode(candidateItem?.candidate?.lat ?? 0, candidateItem?.candidate?.lng ?? 0);
+      idx === 0
+        ? options?.preferredAddress || (await reverseGeocode(candidateItem?.candidate?.lat ?? 0, candidateItem?.candidate?.lng ?? 0))
+        : await reverseGeocode(candidateItem?.candidate?.lat ?? 0, candidateItem?.candidate?.lng ?? 0);
+    candidateAddresses.push(candidateAddress);
     const candidateReasonText = buildReasonSummary(candidateItem);
     const candidateStrength = recommendationStrengthLabel(candidateItem?.candidate?.tier);
     const candidateSuitability = suitabilityLabel(candidateItem?.candidate?.tier, candidateItem?.candidate?.isPriority);
@@ -1711,32 +1728,29 @@ async function renderTopCandidates(results, options = {}) {
     const pickBtn = card.querySelector('[data-action="pick"]');
     if (pickBtn) {
       pickBtn.addEventListener("click", () => {
+        // Keep explicit share-target action separate from map preview switching.
         lastSharePayload = { item: candidateItem, address: candidateAddress, reasonText: candidateReasonText };
         updateStickyShareButton();
         void recordSessionSelection(candidateItem?.candidate, "dual_candidate_pick");
       });
     }
     card.addEventListener("click", () => {
+      selectedCardIndex = idx;
+      refreshCandidateCardSelectionUI();
+      void renderOverviewCandidate(candidateItem, candidateAddress, candidateReasonText);
       void recordSessionSelection(candidateItem?.candidate, "recommend_card");
     });
+    candidateCards.push(card);
     cardsEl.appendChild(card);
   }
+  refreshCandidateCardSelectionUI();
 
+  const address = candidateAddresses[0] ?? "";
+  const reasonText = buildReasonSummary(item);
   lastSharePayload = { item, address, reasonText };
   updateStickyShareButton();
-
-  lastOverviewItem = item;
   mapStatusEl.textContent = "친구별 경로를 지도에 그리는 중…";
-  const polyPts = await redrawMapOverviewRoutes(item);
-  if (!polyPts) {
-    const pts = [];
-    if (item.candidate) pts.push(item.candidate);
-    perFriends.forEach((pf) => {
-      if (pf?.startPoint) pts.push(pf.startPoint);
-    });
-    if (pts.length) fitBounds(pts);
-  }
-  mapStatusEl.textContent = "1순위 추천, 친구별 경로·핀을 표시했습니다.";
+  await renderOverviewCandidate(item, address, reasonText);
   if (options?.autoOpenDetails) {
     await openCandidateDetails(item, address);
   }
