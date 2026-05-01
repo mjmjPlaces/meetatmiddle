@@ -306,13 +306,6 @@ function renderResultSkeleton(message = "중간지점 후보를 계산하는 중
         <div class="resultSkeletonProgressFill" style="width:0%"></div>
       </div>
       <div class="resultSkeletonProgressLabel">진행률 0%</div>
-      <div class="resultSkeletonLine w-36" style="animation-delay:0ms"></div>
-      <div class="resultSkeletonLine w-[72%]" style="animation-delay:120ms"></div>
-      <div class="resultSkeletonLine w-[58%]" style="animation-delay:220ms"></div>
-      <div class="resultSkeletonDivider"></div>
-      <div class="resultSkeletonLine w-[88%]" style="animation-delay:340ms"></div>
-      <div class="resultSkeletonLine w-[64%]" style="animation-delay:440ms"></div>
-      <div class="resultSkeletonPulseDot" aria-hidden="true"></div>
     </div>
   `;
   resultEl.textContent = message;
@@ -329,20 +322,11 @@ function updateMidpointLoadingProgress(nextValue) {
 function startMidpointLoadingIndicator() {
   stopMidpointLoadingIndicator();
   midpointLoadingProgress = 0;
-  const phases = [
-    "중간지점 계산 중… (1/4 친구별 이동시간을 수집하는 중)",
-    "중간지점 계산 중… (2/4 후보 지점을 정렬하는 중)",
-    "중간지점 계산 중… (3/4 최적 후보를 비교하는 중)",
-    "중간지점 계산 중… (4/4 결과 카드를 준비하는 중)"
-  ];
-  let idx = 0;
   updateMidpointLoadingProgress(0);
-  resultEl.textContent = phases[idx];
+  resultEl.textContent = "중간지점 계산 중…";
   midpointLoadingTimer = setInterval(() => {
-    idx = (idx + 1) % phases.length;
     const delta = midpointLoadingProgress < 55 ? 7 : midpointLoadingProgress < 80 ? 4 : 2;
     updateMidpointLoadingProgress(Math.min(95, midpointLoadingProgress + delta));
-    resultEl.textContent = phases[idx];
   }, 1100);
 }
 
