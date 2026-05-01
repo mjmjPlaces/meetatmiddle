@@ -88,6 +88,7 @@ const selectionRecordedBySid = new Set();
 const DUAL_CANDIDATE_SPREAD_MIN = 18;
 const DUAL_CANDIDATE_SCORE_GAP_MAX = 6;
 const DUAL_CANDIDATE_HARD_GAP_MIN = 35;
+const FAIRNESS_FALLBACK_POOL_SIZE = 6;
 
 const FRIEND_ROUTE_COLORS = ["#E53935", "#1E88E5", "#43A047", "#FB8C00", "#8E24AA", "#00897B"];
 
@@ -567,6 +568,19 @@ function getDualCandidateMode(results) {
     return { enabled: true, reason: "close_score" };
   }
   return { enabled: false, reason: "none" };
+}
+
+function pickFairnessFallbackCandidate(results, topN = FAIRNESS_FALLBACK_POOL_SIZE) {
+  if (!Array.isArray(results) || results.length < 2) return null;
+  const pool = results.slice(1, Math.max(2, topN));
+  if (!pool.length) return null;
+  const ranked = [...pool].sort((a, b) => {
+    const gapA = getFriendTimeGapMinutes(a);
+    const gapB = getFriendTimeGapMinutes(b);
+    if (gapA !== gapB) return gapA - gapB;
+    return Number((a?.score ?? 0) - (b?.score ?? 0));
+  });
+  return ranked[0] ?? null;
 }
 
 function buildCompactSharePayload(item, address, reasonText) {
@@ -1535,7 +1549,15 @@ async function renderTopCandidates(results, options = {}) {
   if (!results?.length) return;
   const dualModeInfo = getDualCandidateMode(results);
   const dualMode = dualModeInfo.enabled;
-  const shownItems = dualMode ? results.slice(0, 2) : results.slice(0, 1);
+  const shownItems = (() => {
+    if (!dualMode) return results.slice(0, 1);
+    if (dualModeInfo.reason !== "hard_gap") return results.slice(0, 2);
+    const fairnessFallback = pickFairnessFallbackCandidate(results);
+    if (!fairnessFallback || fairnessFallback?.candidate?.id === results[0]?.candidate?.id) {
+      return results.slice(0, 2);
+    }
+    return [results[0], fairnessFallback];
+  })();
   const item = shownItems[0];
   lastResults = shownItems;
   if (dualMode) {
@@ -1544,7 +1566,7 @@ async function renderTopCandidates(results, options = {}) {
       "rounded-2xl border border-coral-200 bg-coral-50 px-3 py-2 text-xs font-semibold text-coral-700";
     compareBanner.textContent =
       dualModeInfo.reason === "hard_gap"
-        ? "친구 간 시간차가 큰 케이스라 공정성 보완용 후보를 함께 보여드려요. 상황에 맞는 곳을 선택해 주세요."
+        ? "친구 간 시간차가 큰 케이스라, 2순위는 점수순이 아닌 공정성(시간차 최소) 보완 후보로 보여드려요."
         : "시간 편차가 큰 케이스라 상위 2개 후보를 함께 보여드려요. 상황에 맞는 곳을 선택해 주세요.";
     cardsEl.appendChild(compareBanner);
   }
@@ -1620,7 +1642,12 @@ async function renderTopCandidates(results, options = {}) {
       candidateSpread <= 8
         ? `친구 간 시간차가 작아 균형이 좋아요 (시간차 ${candidateSpread}분).`
         : `친구 간 이동시간 차이를 함께 고려했어요 (시간차 ${candidateSpread}분).`;
-    const rankTitle = idx === 0 ? "추천 1순위" : "비교 후보";
+    const rankTitle =
+      idx === 0
+        ? "추천 1순위"
+        : dualModeInfo.reason === "hard_gap"
+          ? "공정성 보완 후보"
+          : "비교 후보";
     const rankBadge =
       shownItems.length > 1
         ? `<span class="ml-2 rounded-full bg-coral-50 px-2 py-0.5 text-[10px] font-bold text-coral-700">${idx + 1}순위</span>`

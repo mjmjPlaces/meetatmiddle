@@ -25,7 +25,9 @@ const midpointRunMeta = {
   usedMaxCandidates: 0,
   usedRefineCandidates: 0,
   autoRebalanced: false,
-  autoRebalanceReason: ""
+  autoRebalanceReason: "",
+  fairnessModeApplied: false,
+  fairnessModeReason: ""
 };
 
 export function getMidpointRunMeta() {
@@ -37,6 +39,35 @@ function friendTimeGapMinutes(perFriend: CandidateEvaluation["perFriend"]): numb
   const mins = perFriend.map((p) => Number(p.route.totalMinutes ?? 0)).filter((m) => Number.isFinite(m));
   if (mins.length < 2) return 0;
   return Math.max(0, Math.max(...mins) - Math.min(...mins));
+}
+
+function applyFairnessFirstRanking(
+  evaluations: CandidateEvaluation[],
+  gapMin: number,
+  gapWindowMin: number
+): CandidateEvaluation[] {
+  if (!Array.isArray(evaluations) || evaluations.length <= 1) return evaluations;
+  const withGap = evaluations.map((ev) => ({
+    ev,
+    gap: friendTimeGapMinutes(ev.perFriend),
+    commerce: commerceScaleBonus(ev.candidate.name)
+  }));
+  const currentTopGap = withGap[0]?.gap ?? 0;
+  if (currentTopGap < gapMin) return evaluations;
+
+  const minGap = Math.min(...withGap.map((w) => w.gap));
+  const fairnessPool = withGap.filter((w) => w.gap <= minGap + gapWindowMin);
+  const fairnessIds = new Set(fairnessPool.map((w) => w.ev.candidate.id));
+  const fairnessSorted = [...fairnessPool].sort((a, b) => {
+    if (a.gap !== b.gap) return a.gap - b.gap;
+    if (a.commerce !== b.commerce) return b.commerce - a.commerce;
+    if (a.ev.averageMinutes !== b.ev.averageMinutes) return a.ev.averageMinutes - b.ev.averageMinutes;
+    return a.ev.score - b.ev.score;
+  });
+  const restSorted = withGap
+    .filter((w) => !fairnessIds.has(w.ev.candidate.id))
+    .sort((a, b) => a.ev.score - b.ev.score);
+  return [...fairnessSorted, ...restSorted].map((w) => w.ev);
 }
 
 function centroid(points: Point[]): Point {
@@ -238,6 +269,8 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
   const autoRebalanceGapMin = Number(process.env.AUTO_REBALANCE_GAP_MIN ?? 30);
   const autoRebalanceMaxCandidates = Number(process.env.AUTO_REBALANCE_MAX_CANDIDATES ?? 60);
   const autoRebalanceRefineCandidates = Number(process.env.AUTO_REBALANCE_REFINE_CANDIDATES ?? 24);
+  const fairnessModeGapMin = Number(process.env.FAIRNESS_MODE_GAP_MIN ?? 35);
+  const fairnessModeGapWindowMin = Number(process.env.FAIRNESS_MODE_GAP_WINDOW_MIN ?? 5);
   let apiCallCount = 0;
 
   const dailyBudget = Number(process.env.DAILY_ODSAY_BUDGET ?? 15000);
@@ -249,6 +282,8 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
   midpointRunMeta.degradedReason = "";
   midpointRunMeta.autoRebalanced = false;
   midpointRunMeta.autoRebalanceReason = "";
+  midpointRunMeta.fairnessModeApplied = false;
+  midpointRunMeta.fairnessModeReason = "";
   if (budgetRatio >= 0.9) {
     maxCandidates = Math.min(maxCandidates, 8);
     refineCandidates = Math.min(refineCandidates, 3);
@@ -417,6 +452,17 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
     }
   }
 
+  const beforeFairnessTopGap = friendTimeGapMinutes(finalEvaluations[0]?.perFriend ?? []);
+  if (friendPoints.length === 2 && beforeFairnessTopGap >= fairnessModeGapMin) {
+    const reordered = applyFairnessFirstRanking(finalEvaluations, fairnessModeGapMin, fairnessModeGapWindowMin);
+    const firstChanged = reordered[0]?.candidate?.id !== finalEvaluations[0]?.candidate?.id;
+    if (firstChanged) {
+      midpointRunMeta.fairnessModeApplied = true;
+      midpointRunMeta.fairnessModeReason = `top_gap_${beforeFairnessTopGap}_over_${fairnessModeGapMin}`;
+    }
+    finalEvaluations = reordered;
+  }
+
   console.log("[Midpoint] evaluation stats", {
     candidateCount: evalRun.candidateCount,
     shortlistedCount: evalRun.shortlistedCount,
@@ -426,6 +472,8 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
     degradedReason: midpointRunMeta.degradedReason,
     autoRebalanced: midpointRunMeta.autoRebalanced,
     autoRebalanceReason: midpointRunMeta.autoRebalanceReason,
+    fairnessModeApplied: midpointRunMeta.fairnessModeApplied,
+    fairnessModeReason: midpointRunMeta.fairnessModeReason,
     elapsedMs: Date.now() - startedAt
   });
 
