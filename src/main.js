@@ -85,6 +85,8 @@ let midpointLoadingTimer = null;
 let midpointLoadingProgress = 0;
 let currentShareSessionId = "";
 const selectionRecordedBySid = new Set();
+const DUAL_CANDIDATE_SPREAD_MIN = 18;
+const DUAL_CANDIDATE_SCORE_GAP_MAX = 6;
 
 const FRIEND_ROUTE_COLORS = ["#E53935", "#1E88E5", "#43A047", "#FB8C00", "#8E24AA", "#00897B"];
 
@@ -517,6 +519,30 @@ async function recordSessionShared(sid) {
   } catch {
     // non-blocking analytics write
   }
+}
+
+async function recordSessionEvents(events) {
+  const sid = currentShareSessionId || readSidFromLocation() || "";
+  if (!sid || !Array.isArray(events) || !events.length) return;
+  try {
+    await fetch(shareApiUrl(`/api/v1/sessions/${encodeURIComponent(sid)}/events`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ events })
+    });
+  } catch {
+    // non-blocking analytics write
+  }
+}
+
+function shouldShowDualCandidates(results) {
+  if (!Array.isArray(results) || results.length < 2) return false;
+  const first = results[0];
+  const second = results[1];
+  if (!first || !second) return false;
+  const spread = Math.max(0, Math.round((first?.maxMinutes ?? 0) - (first?.averageMinutes ?? 0)));
+  const scoreGap = Number((second?.score ?? 0) - (first?.score ?? 0));
+  return spread >= DUAL_CANDIDATE_SPREAD_MIN && scoreGap <= DUAL_CANDIDATE_SCORE_GAP_MAX;
 }
 
 function buildCompactSharePayload(item, address, reasonText) {
@@ -1483,8 +1509,27 @@ async function renderTopCandidates(results, options = {}) {
   clearMapObjects();
   cardsEl.innerHTML = "";
   if (!results?.length) return;
-  const item = results[0];
-  lastResults = [item];
+  const dualMode = shouldShowDualCandidates(results);
+  const shownItems = dualMode ? results.slice(0, 2) : results.slice(0, 1);
+  const item = shownItems[0];
+  lastResults = shownItems;
+  if (dualMode) {
+    const compareBanner = document.createElement("div");
+    compareBanner.className =
+      "rounded-2xl border border-coral-200 bg-coral-50 px-3 py-2 text-xs font-semibold text-coral-700";
+    compareBanner.textContent = "시간 편차가 큰 케이스라 상위 2개 후보를 함께 보여드려요. 상황에 맞는 곳을 선택해 주세요.";
+    cardsEl.appendChild(compareBanner);
+  }
+
+  const sharedEvents = shownItems.map((c, idx) => ({
+    eventType: "candidate_impression",
+    candidateId: c?.candidate?.id ?? c?.candidate?.name ?? "",
+    candidateName: c?.candidate?.name ?? "",
+    rank: idx + 1,
+    meta: { dualMode }
+  }));
+  void recordSessionEvents(sharedEvents);
+
   const { lat, lng, name } = item.candidate;
   const address = options?.preferredAddress || (await reverseGeocode(lat, lng));
   const reasonText = buildReasonSummary(item);
@@ -1526,39 +1571,80 @@ async function renderTopCandidates(results, options = {}) {
     );
   });
 
-  const card = document.createElement("div");
-  card.className = "rounded-3xl border border-coral-100 bg-white p-4 shadow-softCard app-fade";
-  card.innerHTML = `
-    <strong class="text-slate-800">🌟 추천 1순위 - ${name}</strong>
-    <div class="mt-1 text-xs text-slate-500">주소: ${address}</div>
-    <div class="mt-1 text-xs text-slate-600">추천 강도: ${recommendationStrength}</div>
-    <div class="mt-1 text-xs text-slate-600">만남 적합도: ${suitability}</div>
-    <div class="mt-1 text-xs text-slate-600">라벨: ${contextLabel}</div>
-    <div class="mt-1 text-xs font-bold text-coral-600">만남지수 ${meetingIndex}점</div>
-    ${
-      shiftedNote
-        ? `<div class="mt-1 text-xs text-slate-500">후보 통합: ${escapeHtml(shiftedNote)}</div>`
-        : ""
+  for (let idx = 0; idx < shownItems.length; idx += 1) {
+    const candidateItem = shownItems[idx];
+    const candidateAddress =
+      idx === 0 ? address : await reverseGeocode(candidateItem?.candidate?.lat ?? 0, candidateItem?.candidate?.lng ?? 0);
+    const candidateReasonText = buildReasonSummary(candidateItem);
+    const candidateStrength = recommendationStrengthLabel(candidateItem?.candidate?.tier);
+    const candidateSuitability = suitabilityLabel(candidateItem?.candidate?.tier, candidateItem?.candidate?.isPriority);
+    const candidateContext = hotplaceAccessibilityLabel(candidateItem);
+    const candidateMeetingIndex = meetingIndexScore(candidateItem);
+    const candidateShifted = String(candidateItem?.candidate?.shiftedFrom ?? "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+    const candidateShiftedNote = candidateShifted.length
+      ? `동일 환승거점 후보 ${candidateShifted.length}개를 하나로 묶어 비교했어요.`
+      : "";
+    const candidateSpread = Math.max(
+      0,
+      Math.round((candidateItem?.maxMinutes ?? 0) - (candidateItem?.averageMinutes ?? 0))
+    );
+    const candidateBalanceNote =
+      candidateSpread <= 8
+        ? `친구별 이동시간 편차가 작아 균형이 좋아요 (편차 ${candidateSpread}분).`
+        : `가장 오래 걸리는 친구 시간도 함께 고려해 편차를 줄였어요 (편차 ${candidateSpread}분).`;
+    const rankTitle = idx === 0 ? "추천 1순위" : "비교 후보";
+    const rankBadge =
+      shownItems.length > 1
+        ? `<span class="ml-2 rounded-full bg-coral-50 px-2 py-0.5 text-[10px] font-bold text-coral-700">${idx + 1}순위</span>`
+        : "";
+    const card = document.createElement("div");
+    card.className = "rounded-3xl border border-coral-100 bg-white p-4 shadow-softCard app-fade";
+    card.innerHTML = `
+      <strong class="text-slate-800">🌟 ${rankTitle} - ${escapeHtml(candidateItem?.candidate?.name ?? "추천 지점")}${rankBadge}</strong>
+      <div class="mt-1 text-xs text-slate-500">주소: ${escapeHtml(candidateAddress)}</div>
+      <div class="mt-1 text-xs text-slate-600">추천 강도: ${candidateStrength}</div>
+      <div class="mt-1 text-xs text-slate-600">만남 적합도: ${candidateSuitability}</div>
+      <div class="mt-1 text-xs text-slate-600">라벨: ${candidateContext}</div>
+      <div class="mt-1 text-xs font-bold text-coral-600">만남지수 ${candidateMeetingIndex}점</div>
+      ${
+        candidateShiftedNote
+          ? `<div class="mt-1 text-xs text-slate-500">후보 통합: ${escapeHtml(candidateShiftedNote)}</div>`
+          : ""
+      }
+      <div class="mt-1 text-xs text-coral-600 font-bold">선정 이유: ${escapeHtml(candidateReasonText)}</div>
+      <div class="mt-1 text-xs text-slate-500">${escapeHtml(candidateBalanceNote)}</div>
+      <div class="mt-1 text-xs text-slate-600">평균 ${Math.round(candidateItem.averageMinutes)}분 · 최대 ${Math.round(
+        candidateItem.maxMinutes
+      )}분</div>
+      <div class="mt-3 grid gap-2">
+        <button type="button" class="tap-press h-11 w-full rounded-2xl border border-coral-200 bg-coral-50 px-3 text-sm font-bold text-coral-600" data-action="details">세부 내용 조회</button>
+        ${
+          idx > 0
+            ? '<button type="button" class="tap-press h-11 w-full rounded-2xl border border-coral-200 bg-white px-3 text-sm font-bold text-coral-700" data-action="pick">이 후보를 공유 기준으로 선택</button>'
+            : ""
+        }
+      </div>
+    `;
+    card.querySelector('[data-action="details"]').addEventListener("click", () =>
+      void openCandidateDetails(candidateItem, candidateAddress)
+    );
+    const pickBtn = card.querySelector('[data-action="pick"]');
+    if (pickBtn) {
+      pickBtn.addEventListener("click", () => {
+        lastSharePayload = { item: candidateItem, address: candidateAddress, reasonText: candidateReasonText };
+        updateStickyShareButton();
+        void recordSessionSelection(candidateItem?.candidate, "dual_candidate_pick");
+      });
     }
-    <div class="mt-1 text-xs text-coral-600 font-bold">선정 이유: ${reasonText}</div>
-    <div class="mt-1 text-xs text-slate-500">${escapeHtml(balanceNote)}</div>
-    <div class="mt-1 text-xs text-slate-600">평균 ${Math.round(item.averageMinutes)}분 · 최대 ${Math.round(item.maxMinutes)}분</div>
-    ${
-      shiftedNote
-        ? `<div class="mt-1 text-xs text-slate-500">${escapeHtml(shiftedNote)}</div>`
-        : ""
-    }
-    <div class="mt-3">
-      <button type="button" class="tap-press h-11 w-full rounded-2xl border border-coral-200 bg-coral-50 px-3 text-sm font-bold text-coral-600" data-action="details">세부 내용 조회</button>
-    </div>
-  `;
-  card.querySelector('[data-action="details"]').addEventListener("click", () =>
-    void openCandidateDetails(item, address)
-  );
-  card.addEventListener("click", () => {
-    void recordSessionSelection(item?.candidate, "recommend_card");
-  });
-  cardsEl.appendChild(card);
+    card.addEventListener("click", () => {
+      void recordSessionSelection(candidateItem?.candidate, "recommend_card");
+    });
+    cardsEl.appendChild(card);
+  }
+
   lastSharePayload = { item, address, reasonText };
   updateStickyShareButton();
 

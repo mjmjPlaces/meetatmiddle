@@ -14,6 +14,14 @@ type SessionSelectInput = {
   lng?: number;
 };
 
+type SessionEventInput = {
+  eventType: string;
+  candidateId?: string;
+  candidateName?: string;
+  rank?: number;
+  meta?: Record<string, unknown>;
+};
+
 let pool: Pool | null = null;
 let enabled = false;
 
@@ -89,6 +97,21 @@ export async function initSessionStore() {
     `);
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_session_origins_sid ON session_origins (sid);
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS session_candidate_events (
+        id BIGSERIAL PRIMARY KEY,
+        sid TEXT NOT NULL REFERENCES sessions(sid) ON DELETE CASCADE,
+        event_type TEXT NOT NULL,
+        candidate_id TEXT,
+        candidate_name TEXT,
+        rank_order INTEGER,
+        meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_session_candidate_events_sid ON session_candidate_events (sid, created_at DESC);
     `);
     await pool.query(`
       CREATE OR REPLACE VIEW v_session_origin_destination_stats AS
@@ -216,6 +239,40 @@ export async function markSessionShared(sid: string) {
   } catch (error) {
     console.warn("[SessionStore] markSessionShared failed", { sid, error: String(error) });
     return false;
+  }
+}
+
+export async function appendSessionEvents(sid: string, events: SessionEventInput[]) {
+  if (!enabled || !pool || !events.length) return false;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const event of events) {
+      const eventType = String(event.eventType ?? "").trim();
+      if (!eventType) continue;
+      await client.query(
+        `
+        INSERT INTO session_candidate_events (sid, event_type, candidate_id, candidate_name, rank_order, meta)
+        VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), $5, $6::jsonb)
+        `,
+        [
+          sid,
+          eventType,
+          String(event.candidateId ?? "").trim(),
+          String(event.candidateName ?? "").trim(),
+          event.rank ?? null,
+          JSON.stringify(event.meta ?? {})
+        ]
+      );
+    }
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.warn("[SessionStore] appendSessionEvents failed", { sid, error: String(error) });
+    return false;
+  } finally {
+    client.release();
   }
 }
 

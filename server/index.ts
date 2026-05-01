@@ -8,7 +8,14 @@ import { fileURLToPath } from "node:url";
 import { getApiMetrics, loadLane } from "./apis.js";
 import { TTLCache } from "./cache.js";
 import { findMidpoints, getMidpointRunMeta } from "./midpointService.js";
-import { initSessionStore, isSessionStoreEnabled, markSessionSelected, markSessionShared, saveShareSession } from "./sessionStore.js";
+import {
+  appendSessionEvents,
+  initSessionStore,
+  isSessionStoreEnabled,
+  markSessionSelected,
+  markSessionShared,
+  saveShareSession
+} from "./sessionStore.js";
 import { MidpointRequest } from "./types.js";
 
 // Load .env first, then let .env.local override for local development.
@@ -206,6 +213,19 @@ app.post("/api/v1/sessions/:sid/share", async (req, res) => {
   const ok = await markSessionShared(sid);
   if (!ok) return res.status(404).json({ error: "session not found" });
   return res.json({ ok: true, sid, isShared: true });
+});
+
+app.post("/api/v1/sessions/:sid/events", async (req, res) => {
+  const sid = String(req.params.sid ?? "").trim();
+  if (!sid) return res.status(400).json({ error: "sid is required" });
+  if (!isSessionStoreEnabled()) {
+    return res.status(503).json({ error: "session store is disabled (DATABASE_URL missing or unavailable)" });
+  }
+  const events = Array.isArray(req.body?.events) ? req.body.events : [];
+  if (!events.length) return res.status(400).json({ error: "events is required" });
+  const ok = await appendSessionEvents(sid, events);
+  if (!ok) return res.status(500).json({ error: "failed to append events" });
+  return res.json({ ok: true, sid, count: events.length });
 });
 
 app.post("/api/midpoint", async (req, res) => {
