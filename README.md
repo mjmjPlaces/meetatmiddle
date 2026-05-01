@@ -46,6 +46,7 @@
 - `AUTO_REBALANCE_MAX_CANDIDATES`: 2차 확장 탐색 시 최대 후보 수 상한(기본 60)
 - `AUTO_REBALANCE_REFINE_CANDIDATES`: 2차 확장 탐색 시 정밀평가 후보 수 상한(기본 24)
 - `TWO_USER_REFINE_MIN`: 2인 검색 시 유지할 정밀평가 후보 최소 개수(기본 20)
+- `MULTI_USER_REFINE_MIN`: 3인 이상 검색 시 유지할 정밀평가 후보 최소 개수(기본 15)
 - `FAIRNESS_MODE_GAP_MIN`: 2인 검색에서 최상위 후보 시간차가 이 값 이상이면 공정성 우선 랭킹 모드 적용(기본 30분)
 - `FAIRNESS_MODE_GAP_WINDOW_MIN`: 최소 시간차와 허용 윈도우(분). 동률권 내 상권 점수로 최종 우선순위 결정(기본 8분)
 - `EXTREME_GAP_PENALTY_THRESHOLD_MIN`: 극단 편차 추가 패널티 시작 분(기본 35분)

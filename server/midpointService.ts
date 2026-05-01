@@ -326,6 +326,7 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
   const fairnessModeGapMin = Number(process.env.FAIRNESS_MODE_GAP_MIN ?? 30);
   const fairnessModeGapWindowMin = Number(process.env.FAIRNESS_MODE_GAP_WINDOW_MIN ?? 8);
   const twoUserRefineMin = Number(process.env.TWO_USER_REFINE_MIN ?? 20);
+  const multiUserRefineMin = Number(process.env.MULTI_USER_REFINE_MIN ?? 15);
   const extremeGapPenaltyThresholdMin = Number(process.env.EXTREME_GAP_PENALTY_THRESHOLD_MIN ?? 35);
   const extremeGapPenaltyPerMinute = Number(process.env.EXTREME_GAP_PENALTY_PER_MINUTE ?? 1.2);
   const fairnessSecondaryPoolSize = Number(process.env.FAIRNESS_SECONDARY_POOL_SIZE ?? 6);
@@ -377,6 +378,9 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
   );
   if (friendPoints.length === 2 && !midpointRunMeta.degradedMode) {
     refineCandidates = Math.max(refineCandidates, Math.min(twoUserRefineMin, maxCandidates));
+    midpointRunMeta.usedRefineCandidates = refineCandidates;
+  } else if (friendPoints.length >= 3 && !midpointRunMeta.degradedMode) {
+    refineCandidates = Math.max(refineCandidates, Math.min(multiUserRefineMin, maxCandidates));
     midpointRunMeta.usedRefineCandidates = refineCandidates;
   }
   const outputTopN = Math.max(topN, friendPoints.length === 2 ? 5 : topN);
@@ -538,7 +542,6 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
 
   const topGap = friendFairnessSpreadMinutes(finalEvaluations[0]?.perFriend ?? []);
   const canExpandSearch =
-    friendPoints.length === 2 &&
     topGap >= autoRebalanceGapMin &&
     !midpointRunMeta.degradedMode &&
     maxCandidates < autoRebalanceMaxCandidates;
