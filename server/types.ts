@@ -35,6 +35,15 @@ export interface CandidateEvaluation {
   score: number;
   averageMinutes: number;
   maxMinutes: number;
+  scoreBreakdown?: {
+    baseBalancedScore: number;
+    tierAdjust: number;
+    commerceAdjust: number;
+    expressAdjust: number;
+    extremeGapAdjust: number;
+    finalScore: number;
+    gapMinutes: number;
+  };
 }
 
 export interface MidpointRequest {

@@ -45,8 +45,12 @@
 - `AUTO_REBALANCE_GAP_MIN`: 2인 검색 1순위의 친구 간 시간차가 이 값 이상이면 2차 확장 탐색 수행(기본 30분)
 - `AUTO_REBALANCE_MAX_CANDIDATES`: 2차 확장 탐색 시 최대 후보 수 상한(기본 60)
 - `AUTO_REBALANCE_REFINE_CANDIDATES`: 2차 확장 탐색 시 정밀평가 후보 수 상한(기본 24)
-- `FAIRNESS_MODE_GAP_MIN`: 2인 검색에서 최상위 후보 시간차가 이 값 이상이면 공정성 우선 랭킹 모드 적용(기본 35분)
-- `FAIRNESS_MODE_GAP_WINDOW_MIN`: 최소 시간차와 허용 윈도우(분). 동률권 내 상권 점수로 최종 우선순위 결정(기본 5분)
+- `TWO_USER_REFINE_MIN`: 2인 검색 시 유지할 정밀평가 후보 최소 개수(기본 20)
+- `FAIRNESS_MODE_GAP_MIN`: 2인 검색에서 최상위 후보 시간차가 이 값 이상이면 공정성 우선 랭킹 모드 적용(기본 30분)
+- `FAIRNESS_MODE_GAP_WINDOW_MIN`: 최소 시간차와 허용 윈도우(분). 동률권 내 상권 점수로 최종 우선순위 결정(기본 8분)
+- `EXTREME_GAP_PENALTY_THRESHOLD_MIN`: 극단 편차 추가 패널티 시작 분(기본 35분)
+- `EXTREME_GAP_PENALTY_PER_MINUTE`: 임계치 초과 1분당 가산 패널티(기본 1.2)
+- `FAIRNESS_SECONDARY_POOL_SIZE`: 고편차 시 서버가 2순위(공정성 후보) 선정을 위해 보는 상위 풀 크기(기본 6)
 
 ## 운영 API
 - `GET /api/ops/metrics`: API 호출량/캐시 효율/현재 degraded 모드 상태 확인
