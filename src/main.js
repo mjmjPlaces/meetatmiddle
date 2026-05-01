@@ -361,6 +361,19 @@ function buildReasonSummary(item) {
   return "다수 이동시간 최적";
 }
 
+function getRouteMinutes(item) {
+  const routes = item?.perFriend ?? [];
+  return routes
+    .map((r) => Number(r?.route?.totalMinutes ?? 0))
+    .filter((m) => Number.isFinite(m) && m >= 0);
+}
+
+function getFriendTimeGapMinutes(item) {
+  const minutes = getRouteMinutes(item);
+  if (minutes.length < 2) return 0;
+  return Math.max(0, Math.round(Math.max(...minutes) - Math.min(...minutes)));
+}
+
 function recommendationStrengthLabel(tier) {
   if (tier === 1) return "아주 추천";
   if (tier === 2) return "추천";
@@ -540,7 +553,7 @@ function shouldShowDualCandidates(results) {
   const first = results[0];
   const second = results[1];
   if (!first || !second) return false;
-  const spread = Math.max(0, Math.round((first?.maxMinutes ?? 0) - (first?.averageMinutes ?? 0)));
+  const spread = getFriendTimeGapMinutes(first);
   const scoreGap = Number((second?.score ?? 0) - (first?.score ?? 0));
   return spread >= DUAL_CANDIDATE_SPREAD_MIN && scoreGap <= DUAL_CANDIDATE_SCORE_GAP_MAX;
 }
@@ -1544,11 +1557,11 @@ async function renderTopCandidates(results, options = {}) {
   const shiftedNote = shiftedCandidates.length
     ? `동일 환승거점 후보 ${shiftedCandidates.length}개를 하나로 묶어 비교했어요.`
     : "";
-  const spreadMinutes = Math.max(0, Math.round((item?.maxMinutes ?? 0) - (item?.averageMinutes ?? 0)));
+  const spreadMinutes = getFriendTimeGapMinutes(item);
   const balanceNote =
     spreadMinutes <= 8
-      ? `친구별 이동시간 편차가 작아 균형이 좋아요 (편차 ${spreadMinutes}분).`
-      : `가장 오래 걸리는 친구 시간도 함께 고려해 편차를 줄였어요 (편차 ${spreadMinutes}분).`;
+      ? `친구 간 시간차가 작아 균형이 좋아요 (시간차 ${spreadMinutes}분).`
+      : `친구 간 이동시간 차이를 함께 고려했어요 (시간차 ${spreadMinutes}분).`;
 
   const position = new kakao.maps.LatLng(lat, lng);
   const candidateMarker = addCandidateHighlightPin(position);
@@ -1587,14 +1600,11 @@ async function renderTopCandidates(results, options = {}) {
     const candidateShiftedNote = candidateShifted.length
       ? `동일 환승거점 후보 ${candidateShifted.length}개를 하나로 묶어 비교했어요.`
       : "";
-    const candidateSpread = Math.max(
-      0,
-      Math.round((candidateItem?.maxMinutes ?? 0) - (candidateItem?.averageMinutes ?? 0))
-    );
+    const candidateSpread = getFriendTimeGapMinutes(candidateItem);
     const candidateBalanceNote =
       candidateSpread <= 8
-        ? `친구별 이동시간 편차가 작아 균형이 좋아요 (편차 ${candidateSpread}분).`
-        : `가장 오래 걸리는 친구 시간도 함께 고려해 편차를 줄였어요 (편차 ${candidateSpread}분).`;
+        ? `친구 간 시간차가 작아 균형이 좋아요 (시간차 ${candidateSpread}분).`
+        : `친구 간 이동시간 차이를 함께 고려했어요 (시간차 ${candidateSpread}분).`;
     const rankTitle = idx === 0 ? "추천 1순위" : "비교 후보";
     const rankBadge =
       shownItems.length > 1
@@ -1618,7 +1628,7 @@ async function renderTopCandidates(results, options = {}) {
       <div class="mt-1 text-xs text-slate-500">${escapeHtml(candidateBalanceNote)}</div>
       <div class="mt-1 text-xs text-slate-600">평균 ${Math.round(candidateItem.averageMinutes)}분 · 최대 ${Math.round(
         candidateItem.maxMinutes
-      )}분</div>
+      )}분 · 친구 간 시간차 ${candidateSpread}분</div>
       <div class="mt-3 grid gap-2">
         <button type="button" class="tap-press h-11 w-full rounded-2xl border border-coral-200 bg-coral-50 px-3 text-sm font-bold text-coral-600" data-action="details">세부 내용 조회</button>
         ${
