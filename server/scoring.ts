@@ -16,6 +16,9 @@ export function scoreBalanced(
     withTransferPenalty(entry.route, params.transferPenalty)
   );
   const max = Math.max(...adjusted);
+  const min = Math.min(...adjusted);
   const avg = adjusted.reduce((a, b) => a + b, 0) / adjusted.length;
-  return max + avg * 0.1;
+  const gap = Math.max(0, max - min);
+  // Keep "worst-case" (max) priority, but explicitly penalize friend-to-friend time gap.
+  return max + avg * 0.1 + gap * 0.35;
 }
