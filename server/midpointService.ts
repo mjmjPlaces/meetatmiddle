@@ -23,11 +23,20 @@ const midpointRunMeta = {
   degradedMode: false,
   degradedReason: "",
   usedMaxCandidates: 0,
-  usedRefineCandidates: 0
+  usedRefineCandidates: 0,
+  autoRebalanced: false,
+  autoRebalanceReason: ""
 };
 
 export function getMidpointRunMeta() {
   return { ...midpointRunMeta };
+}
+
+function friendTimeGapMinutes(perFriend: CandidateEvaluation["perFriend"]): number {
+  if (!Array.isArray(perFriend) || perFriend.length < 2) return 0;
+  const mins = perFriend.map((p) => Number(p.route.totalMinutes ?? 0)).filter((m) => Number.isFinite(m));
+  if (mins.length < 2) return 0;
+  return Math.max(0, Math.max(...mins) - Math.min(...mins));
 }
 
 function centroid(points: Point[]): Point {
@@ -226,6 +235,9 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
   const topN = req.options?.topN ?? 3;
   const farMinutesThreshold = 65;
   const expressBusBonus = 8;
+  const autoRebalanceGapMin = Number(process.env.AUTO_REBALANCE_GAP_MIN ?? 30);
+  const autoRebalanceMaxCandidates = Number(process.env.AUTO_REBALANCE_MAX_CANDIDATES ?? 60);
+  const autoRebalanceRefineCandidates = Number(process.env.AUTO_REBALANCE_REFINE_CANDIDATES ?? 24);
   let apiCallCount = 0;
 
   const dailyBudget = Number(process.env.DAILY_ODSAY_BUDGET ?? 15000);
@@ -235,6 +247,8 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
   let refineCandidates = configuredRefineCandidates;
   midpointRunMeta.degradedMode = false;
   midpointRunMeta.degradedReason = "";
+  midpointRunMeta.autoRebalanced = false;
+  midpointRunMeta.autoRebalanceReason = "";
   if (budgetRatio >= 0.9) {
     maxCandidates = Math.min(maxCandidates, 8);
     refineCandidates = Math.min(refineCandidates, 3);
@@ -263,119 +277,157 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
   );
 
   const center = centroid(friendPoints.map((f) => f.point));
-  const subwayCandidates = await searchSubwayStationCandidates(center, maxCandidates);
-  const rawCandidates =
-    subwayCandidates.length > 0 ? subwayCandidates : makeCandidateGrid(center, maxCandidates);
-  const candidatesWithMeta = applyPriorityCandidateMeta(rawCandidates);
-  const clusteredCandidates = clusterNearbyCandidates(
-    candidatesWithMeta,
-    friendPoints.map((f) => f.point)
-  );
-  const candidates = await shiftNonPriorityCandidates(clusteredCandidates);
-  if (subwayCandidates.length === 0) {
-    console.warn("[Midpoint] no subway station candidates from Kakao, fallback to grid");
-  }
-  const shortlisted = candidates
-    .map((candidate) => ({
-      candidate,
-      roughScore: priorityAdjustedRoughScore(
+  async function evaluateCandidates(currentMaxCandidates: number, currentRefineCandidates: number) {
+    const subwayCandidates = await searchSubwayStationCandidates(center, currentMaxCandidates);
+    const rawCandidates =
+      subwayCandidates.length > 0 ? subwayCandidates : makeCandidateGrid(center, currentMaxCandidates);
+    const candidatesWithMeta = applyPriorityCandidateMeta(rawCandidates);
+    const clusteredCandidates = clusterNearbyCandidates(
+      candidatesWithMeta,
+      friendPoints.map((f) => f.point)
+    );
+    const candidates = await shiftNonPriorityCandidates(clusteredCandidates);
+    if (subwayCandidates.length === 0) {
+      console.warn("[Midpoint] no subway station candidates from Kakao, fallback to grid");
+    }
+    const shortlisted = candidates
+      .map((candidate) => ({
         candidate,
-        roughDistanceScore(candidate, friendPoints.map((f) => f.point))
-      )
-    }))
-    .sort((a, b) => a.roughScore - b.roughScore)
-    .slice(0, refineCandidates)
-    .map((item) => item.candidate);
+        roughScore: priorityAdjustedRoughScore(
+          candidate,
+          roughDistanceScore(candidate, friendPoints.map((f) => f.point))
+        )
+      }))
+      .sort((a, b) => a.roughScore - b.roughScore)
+      .slice(0, currentRefineCandidates)
+      .map((item) => item.candidate);
 
-  const evaluations: CandidateEvaluation[] = [];
-  let bestScore = Number.POSITIVE_INFINITY;
+    const evaluations: CandidateEvaluation[] = [];
+    let bestScore = Number.POSITIVE_INFINITY;
 
-  for (const candidate of shortlisted) {
-    const orderedFriends = [...friendPoints].sort((a, b) => {
-      const aDx = a.point.lng - candidate.lng;
-      const aDy = a.point.lat - candidate.lat;
-      const bDx = b.point.lng - candidate.lng;
-      const bDy = b.point.lat - candidate.lat;
-      return Math.sqrt(bDx * bDx + bDy * bDy) - Math.sqrt(aDx * aDx + aDy * aDy);
-    });
+    for (const candidate of shortlisted) {
+      const orderedFriends = [...friendPoints].sort((a, b) => {
+        const aDx = a.point.lng - candidate.lng;
+        const aDy = a.point.lat - candidate.lat;
+        const bDx = b.point.lng - candidate.lng;
+        const bDy = b.point.lat - candidate.lat;
+        return Math.sqrt(bDx * bDx + bDy * bDy) - Math.sqrt(aDx * aDx + aDy * aDy);
+      });
 
-    const perFriend: CandidateEvaluation["perFriend"] = [];
-    let shouldSkipCandidate = false;
+      const perFriend: CandidateEvaluation["perFriend"] = [];
+      let shouldSkipCandidate = false;
 
-    for (const friend of orderedFriends) {
-      if (apiCallCount >= maxApiCalls) {
-        console.warn("[Midpoint] API call budget reached", { maxApiCalls });
-        shouldSkipCandidate = true;
-        break;
-      }
-      apiCallCount += 1;
-      const route = await getTransitRoute(friend.point, candidate, {
+      for (const friend of orderedFriends) {
+        if (apiCallCount >= maxApiCalls) {
+          console.warn("[Midpoint] API call budget reached", { maxApiCalls });
+          shouldSkipCandidate = true;
+          break;
+        }
+        apiCallCount += 1;
+        const route = await getTransitRoute(friend.point, candidate, {
           fromLabel: `${friend.name}(${friend.address})`,
           toLabel: `${candidate.name}[${candidate.lat},${candidate.lng}]`
-      });
-      perFriend.push({
-        friendId: friend.id,
-        friendName: friend.name,
-        friendAddress: friend.address,
-        startPoint: friend.point,
-        route
-      });
+        });
+        perFriend.push({
+          friendId: friend.id,
+          friendName: friend.name,
+          friendAddress: friend.address,
+          startPoint: friend.point,
+          route
+        });
 
-      const currentMax = Math.max(...perFriend.map((p) => p.route.totalMinutes));
-      if (currentMax >= bestScore) {
-        shouldSkipCandidate = true;
-        break;
+        const currentMax = Math.max(...perFriend.map((p) => p.route.totalMinutes));
+        if (currentMax >= bestScore) {
+          shouldSkipCandidate = true;
+          break;
+        }
       }
+
+      if (shouldSkipCandidate || perFriend.length !== friendPoints.length) {
+        continue;
+      }
+
+      const total = perFriend.reduce((sum, p) => sum + p.route.totalMinutes, 0);
+      const max = Math.max(...perFriend.map((p) => p.route.totalMinutes));
+      const evaluation: CandidateEvaluation = {
+        candidate,
+        perFriend,
+        score: 0,
+        averageMinutes: total / perFriend.length,
+        maxMinutes: max
+      };
+
+      evaluation.score = scoreBalanced(evaluation, { transferPenalty });
+
+      if (!evaluation.candidate.isPriority) {
+        evaluation.score += 10;
+      } else if (evaluation.candidate.tier === 1) {
+        evaluation.score -= 6;
+      } else if (evaluation.candidate.tier === 2) {
+        evaluation.score -= 3;
+      } else if (evaluation.candidate.tier === 3) {
+        evaluation.score -= 1.5;
+      }
+      evaluation.score -= commerceScaleBonus(evaluation.candidate.name);
+
+      const farRoutes = evaluation.perFriend.filter((p) => p.route.totalMinutes >= farMinutesThreshold);
+      if (farRoutes.length > 0) {
+        const redBusCount = farRoutes.filter((p) => hasExpressRedBus(p.route.raw)).length;
+        if (redBusCount > 0) {
+          evaluation.score -= redBusCount * expressBusBonus;
+        }
+      }
+
+      evaluations.push(evaluation);
+      bestScore = Math.min(bestScore, evaluation.score);
     }
 
-    if (shouldSkipCandidate || perFriend.length !== friendPoints.length) {
-      continue;
-    }
-
-    const total = perFriend.reduce((sum, p) => sum + p.route.totalMinutes, 0);
-    const max = Math.max(...perFriend.map((p) => p.route.totalMinutes));
-    const evaluation: CandidateEvaluation = {
-      candidate,
-      perFriend,
-      score: 0,
-      averageMinutes: total / perFriend.length,
-      maxMinutes: max
+    return {
+      candidateCount: candidates.length,
+      shortlistedCount: shortlisted.length,
+      evaluations: evaluations.sort((a, b) => a.score - b.score)
     };
+  }
 
-    evaluation.score = scoreBalanced(evaluation, { transferPenalty });
+  let evalRun = await evaluateCandidates(maxCandidates, refineCandidates);
+  let finalEvaluations = evalRun.evaluations;
 
-    if (!evaluation.candidate.isPriority) {
-      evaluation.score += 10;
-    } else if (evaluation.candidate.tier === 1) {
-      evaluation.score -= 6;
-    } else if (evaluation.candidate.tier === 2) {
-      evaluation.score -= 3;
-    } else if (evaluation.candidate.tier === 3) {
-      evaluation.score -= 1.5;
+  const topGap = friendTimeGapMinutes(finalEvaluations[0]?.perFriend ?? []);
+  const canExpandSearch =
+    friendPoints.length === 2 &&
+    topGap >= autoRebalanceGapMin &&
+    !midpointRunMeta.degradedMode &&
+    maxCandidates < autoRebalanceMaxCandidates;
+
+  if (canExpandSearch) {
+    const expandedMax = Math.min(autoRebalanceMaxCandidates, Math.max(maxCandidates * 2, maxCandidates + 20));
+    const expandedRefine = Math.min(
+      autoRebalanceRefineCandidates,
+      Math.max(refineCandidates * 2, refineCandidates + 8)
+    );
+    midpointRunMeta.autoRebalanced = true;
+    midpointRunMeta.autoRebalanceReason = `top_gap_${topGap}_over_${autoRebalanceGapMin}`;
+    midpointRunMeta.usedMaxCandidates = expandedMax;
+    midpointRunMeta.usedRefineCandidates = expandedRefine;
+
+    const expandedRun = await evaluateCandidates(expandedMax, expandedRefine);
+    if (expandedRun.evaluations.length > 0) {
+      evalRun = expandedRun;
+      finalEvaluations = expandedRun.evaluations;
     }
-    evaluation.score -= commerceScaleBonus(evaluation.candidate.name);
-
-    const farRoutes = evaluation.perFriend.filter((p) => p.route.totalMinutes >= farMinutesThreshold);
-    if (farRoutes.length > 0) {
-      const redBusCount = farRoutes.filter((p) => hasExpressRedBus(p.route.raw)).length;
-      if (redBusCount > 0) {
-        evaluation.score -= redBusCount * expressBusBonus;
-      }
-    }
-
-    evaluations.push(evaluation);
-    bestScore = Math.min(bestScore, evaluation.score);
   }
 
   console.log("[Midpoint] evaluation stats", {
-    candidateCount: candidates.length,
-    shortlistedCount: shortlisted.length,
-    evaluatedCount: evaluations.length,
+    candidateCount: evalRun.candidateCount,
+    shortlistedCount: evalRun.shortlistedCount,
+    evaluatedCount: finalEvaluations.length,
     apiCallCount,
     degradedMode: midpointRunMeta.degradedMode,
     degradedReason: midpointRunMeta.degradedReason,
+    autoRebalanced: midpointRunMeta.autoRebalanced,
+    autoRebalanceReason: midpointRunMeta.autoRebalanceReason,
     elapsedMs: Date.now() - startedAt
   });
 
-  return evaluations.sort((a, b) => a.score - b.score).slice(0, topN);
+  return finalEvaluations.slice(0, topN);
 }

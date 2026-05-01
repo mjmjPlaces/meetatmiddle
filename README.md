@@ -42,6 +42,9 @@
 - `MIDPOINT_P95_WARN_MS`: `/api/midpoint` p95 경고 임계치(ms, 기본 8000)
 - `MIDPOINT_ALERT_WEBHOOK_URL`: p95 초과 경고를 보낼 Incoming Webhook URL (선택)
 - `MIDPOINT_ALERT_COOLDOWN_MS`: 경고 재전송 최소 간격(ms, 기본 600000=10분)
+- `AUTO_REBALANCE_GAP_MIN`: 2인 검색 1순위의 친구 간 시간차가 이 값 이상이면 2차 확장 탐색 수행(기본 30분)
+- `AUTO_REBALANCE_MAX_CANDIDATES`: 2차 확장 탐색 시 최대 후보 수 상한(기본 60)
+- `AUTO_REBALANCE_REFINE_CANDIDATES`: 2차 확장 탐색 시 정밀평가 후보 수 상한(기본 24)
 
 ## 운영 API
 - `GET /api/ops/metrics`: API 호출량/캐시 효율/현재 degraded 모드 상태 확인
