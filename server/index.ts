@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { getApiMetrics, loadLane } from "./apis.js";
 import { TTLCache } from "./cache.js";
 import { findMidpoints, getMidpointRunMeta } from "./midpointService.js";
+import { initSessionStore, isSessionStoreEnabled, markSessionSelected, markSessionShared, saveShareSession } from "./sessionStore.js";
 import { MidpointRequest } from "./types.js";
 
 // Load .env first, then let .env.local override for local development.
@@ -166,6 +167,7 @@ app.post("/api/share", (req, res) => {
   }
   const sid = randomUUID().replace(/-/g, "").slice(0, 16);
   sharePayloadCache.set(sid, payload);
+  void saveShareSession(sid, payload);
   return res.json({ sid });
 });
 
@@ -175,6 +177,35 @@ app.get("/api/share/:sid", (req, res) => {
   const payload = sharePayloadCache.get(sid);
   if (!payload) return res.status(404).json({ error: "share payload not found or expired" });
   return res.json({ payload });
+});
+
+app.post("/api/v1/sessions/:sid/select", async (req, res) => {
+  const sid = String(req.params.sid ?? "").trim();
+  if (!sid) return res.status(400).json({ error: "sid is required" });
+  const selectedPlaceId = String(req.body?.selectedPlaceId ?? "").trim();
+  if (!selectedPlaceId) return res.status(400).json({ error: "selectedPlaceId is required" });
+  if (!isSessionStoreEnabled()) {
+    return res.status(503).json({ error: "session store is disabled (DATABASE_URL missing or unavailable)" });
+  }
+  const ok = await markSessionSelected(sid, {
+    selectedPlaceId,
+    selectedPlaceName: req.body?.selectedPlaceName,
+    lat: req.body?.lat,
+    lng: req.body?.lng
+  });
+  if (!ok) return res.status(404).json({ error: "session not found" });
+  return res.json({ ok: true, sid, selectedPlaceId });
+});
+
+app.post("/api/v1/sessions/:sid/share", async (req, res) => {
+  const sid = String(req.params.sid ?? "").trim();
+  if (!sid) return res.status(400).json({ error: "sid is required" });
+  if (!isSessionStoreEnabled()) {
+    return res.status(503).json({ error: "session store is disabled (DATABASE_URL missing or unavailable)" });
+  }
+  const ok = await markSessionShared(sid);
+  if (!ok) return res.status(404).json({ error: "session not found" });
+  return res.json({ ok: true, sid, isShared: true });
 });
 
 app.post("/api/midpoint", async (req, res) => {
@@ -277,6 +308,9 @@ app.get("/", (_req, res) => {
 });
 
 const port = Number(process.env.PORT ?? 4000);
-app.listen(port, "0.0.0.0", () => {
-  console.log(`Server listening on port ${port}`);
-});
+void (async () => {
+  await initSessionStore();
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`Server listening on port ${port}`);
+  });
+})();

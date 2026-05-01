@@ -83,6 +83,8 @@ let lastOverviewItem = null;
 let friendOverviewEntries = [];
 let midpointLoadingTimer = null;
 let midpointLoadingProgress = 0;
+let currentShareSessionId = "";
+const selectionRecordedBySid = new Set();
 
 const FRIEND_ROUTE_COLORS = ["#E53935", "#1E88E5", "#43A047", "#FB8C00", "#8E24AA", "#00897B"];
 
@@ -494,6 +496,42 @@ async function createShareSession(payload) {
     return String(data?.sid ?? "");
   } catch {
     return "";
+  }
+}
+
+async function recordSessionSelection(candidate, source = "card_click") {
+  const sid = currentShareSessionId || readSidFromLocation() || "";
+  const selectedPlaceId = String(candidate?.id ?? candidate?.name ?? "").trim();
+  if (!sid || !selectedPlaceId || selectionRecordedBySid.has(`${sid}:${selectedPlaceId}`)) return;
+  try {
+    const res = await fetch(shareApiUrl(`/api/v1/sessions/${encodeURIComponent(sid)}/select`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        selectedPlaceId,
+        selectedPlaceName: candidate?.name ?? "",
+        lat: candidate?.lat,
+        lng: candidate?.lng,
+        source
+      })
+    });
+    if (res.ok) {
+      selectionRecordedBySid.add(`${sid}:${selectedPlaceId}`);
+    }
+  } catch {
+    // non-blocking analytics write
+  }
+}
+
+async function recordSessionShared(sid) {
+  if (!sid) return;
+  try {
+    await fetch(shareApiUrl(`/api/v1/sessions/${encodeURIComponent(sid)}/share`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    });
+  } catch {
+    // non-blocking analytics write
   }
 }
 
@@ -1027,6 +1065,7 @@ async function shareTopCandidate(item, address, reasonText) {
   const tinyFallbackPayload = buildTinyShareFallbackPayload(item, address, reasonText);
   const compactPayload = buildCompactSharePayload(item, address, reasonText);
   const shareSessionId = await createShareSession(compactPayload);
+  if (shareSessionId) currentShareSessionId = shareSessionId;
   const shareUrls = shareSessionId
     ? buildShareUrlsFromSid(shareSessionId, tinyFallbackPayload)
     : buildShareUrls(tinyFallbackPayload);
@@ -1071,6 +1110,9 @@ async function shareTopCandidate(item, address, reasonText) {
         titleImageText: kakaoItemText
       }
     });
+    if (shareSessionId) {
+      void recordSessionShared(shareSessionId);
+    }
   } catch (error) {
     // Fallback for Kakao validation failures (e.g. oversized URL/payload)
     lastShareErrorDetail = `공유 요청 실패: ${String(error)}`;
@@ -1513,6 +1555,9 @@ async function renderTopCandidates(results, options = {}) {
   card.querySelector('[data-action="details"]').addEventListener("click", () =>
     void openCandidateDetails(item, address)
   );
+  card.addEventListener("click", () => {
+    void recordSessionSelection(item?.candidate, "recommend_card");
+  });
   cardsEl.appendChild(card);
   lastSharePayload = { item, address, reasonText };
   updateStickyShareButton();
@@ -1634,6 +1679,9 @@ runBtn.addEventListener("click", async () => {
     if (results.length) {
       setSearchViewVisible(false);
     }
+    // Stop rotating loading copy before rendering result cards,
+    // otherwise async map/detail rendering can overwrite completion text.
+    stopMidpointLoadingIndicator();
     updateMidpointLoadingProgress(100);
     resultEl.textContent = "중간지점 계산 완료.";
     if (isMapReady) {
@@ -1719,12 +1767,15 @@ void (async () => {
     if (sharedState.shareLookup === "sid" && readSidFromLocation() && window.history?.replaceState) {
       try {
         const sid = readSidFromLocation();
+        currentShareSessionId = sid ?? "";
         const origin = window.location.origin;
         const v = sharedState.view ? `?view=${encodeURIComponent(sharedState.view)}` : "";
         window.history.replaceState(window.history.state, "", `${origin}/s/${encodeURIComponent(sid ?? "")}${v}`);
       } catch {
         // ignore
       }
+    } else if (readSidFromLocation()) {
+      currentShareSessionId = readSidFromLocation() ?? "";
     }
   } else if (looksLikeShareLinkIntent()) {
     resultEl.textContent =

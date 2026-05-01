@@ -27,6 +27,7 @@
 ## 운영 환경 변수
 - `NODE_ENV`: `production` 권장
 - `PORT`: 서버 포트
+- `DATABASE_URL`: (선택) Postgres URL. 설정 시 세션 선택/공유 분석 데이터 영속화
 - `ALLOWED_ORIGINS`: 콤마 구분 허용 origin 목록 (운영 + 프리뷰)
 - `KAKAO_REST_API_KEY`, `KAKAO_JS_KEY`
 - ODsay 키/Origin (환경별 분리 권장)
@@ -44,6 +45,8 @@
 
 ## 운영 API
 - `GET /api/ops/metrics`: API 호출량/캐시 효율/현재 degraded 모드 상태 확인
+- `POST /api/v1/sessions/:sid/select`: 추천지 선택/확정 이벤트 기록
+- `POST /api/v1/sessions/:sid/share`: 공유 완료 이벤트 기록
 
 ### `/api/ops/metrics` 응답 예시
 
@@ -196,3 +199,10 @@ npm run dev
   }
 }
 ```
+
+### 사용자 의사결정 추적 (Session DB)
+- DB가 켜져 있으면(`DATABASE_URL`) `/api/share` 생성 시 `sessions`, `session_origins`에 저장
+- 출발지 좌표는 개인정보 최소화를 위해 소수점 3자리까지 저장(`lat_approx`, `lng_approx`)
+- 추천지 클릭 시 `POST /api/v1/sessions/:sid/select`
+- 카카오 공유 성공 시 `POST /api/v1/sessions/:sid/share`
+- B2B 통계용 View SQL: `docs/sql/session_origin_destination_stats_view.sql`
