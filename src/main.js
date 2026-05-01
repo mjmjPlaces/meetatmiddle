@@ -89,6 +89,8 @@ const DUAL_CANDIDATE_SPREAD_MIN = 18;
 const DUAL_CANDIDATE_SCORE_GAP_MAX = 6;
 const DUAL_CANDIDATE_HARD_GAP_MIN = 35;
 const FAIRNESS_FALLBACK_POOL_SIZE = 6;
+const FAIRNESS_SECONDARY_MAX_GAP_DELTA = 5;
+const FAIRNESS_SECONDARY_MAX_MAX_MINUTES = 60;
 
 const FRIEND_ROUTE_COLORS = ["#E53935", "#1E88E5", "#43A047", "#FB8C00", "#8E24AA", "#00897B"];
 
@@ -376,6 +378,12 @@ function getFriendTimeGapMinutes(item) {
   return Math.max(0, Math.round(Math.max(...minutes) - Math.min(...minutes)));
 }
 
+function getFriendMaxMinutes(item) {
+  const minutes = getRouteMinutes(item);
+  if (!minutes.length) return 0;
+  return Math.max(...minutes);
+}
+
 function recommendationStrengthLabel(tier) {
   if (tier === 1) return "아주 추천";
   if (tier === 2) return "추천";
@@ -568,6 +576,17 @@ function getDualCandidateMode(results) {
     return { enabled: true, reason: "close_score" };
   }
   return { enabled: false, reason: "none" };
+}
+
+function isFairnessFallbackPair(primary, secondary) {
+  if (!primary || !secondary) return false;
+  const primaryGap = getFriendTimeGapMinutes(primary);
+  const secondaryGap = getFriendTimeGapMinutes(secondary);
+  const secondaryMax = getFriendMaxMinutes(secondary);
+  return (
+    secondaryGap <= primaryGap + FAIRNESS_SECONDARY_MAX_GAP_DELTA &&
+    secondaryMax <= FAIRNESS_SECONDARY_MAX_MAX_MINUTES
+  );
 }
 
 function pickFairnessFallbackCandidate(results, topN = FAIRNESS_FALLBACK_POOL_SIZE) {
@@ -1564,8 +1583,12 @@ async function renderTopCandidates(results, options = {}) {
     const compareBanner = document.createElement("div");
     compareBanner.className =
       "rounded-2xl border border-coral-200 bg-coral-50 px-3 py-2 text-xs font-semibold text-coral-700";
+    const strictFairnessFallback =
+      dualModeInfo.reason === "hard_gap" && shownItems.length > 1
+        ? isFairnessFallbackPair(shownItems[0], shownItems[1])
+        : false;
     compareBanner.textContent =
-      dualModeInfo.reason === "hard_gap"
+      strictFairnessFallback
         ? "친구 간 시간차가 큰 케이스라, 2순위는 점수순이 아닌 공정성(시간차 최소) 보완 후보로 보여드려요."
         : "시간 편차가 큰 케이스라 상위 2개 후보를 함께 보여드려요. 상황에 맞는 곳을 선택해 주세요.";
     cardsEl.appendChild(compareBanner);
@@ -1642,10 +1665,12 @@ async function renderTopCandidates(results, options = {}) {
       candidateSpread <= 8
         ? `친구 간 시간차가 작아 균형이 좋아요 (시간차 ${candidateSpread}분).`
         : `친구 간 이동시간 차이를 함께 고려했어요 (시간차 ${candidateSpread}분).`;
+    const strictFairnessFallback =
+      dualModeInfo.reason === "hard_gap" && idx > 0 ? isFairnessFallbackPair(shownItems[0], candidateItem) : false;
     const rankTitle =
       idx === 0
         ? "추천 1순위"
-        : dualModeInfo.reason === "hard_gap"
+        : strictFairnessFallback
           ? "공정성 보완 후보"
           : "비교 후보";
     const rankBadge =
