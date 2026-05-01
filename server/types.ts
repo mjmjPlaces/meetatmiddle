@@ -41,6 +41,8 @@ export interface CandidateEvaluation {
     commerceAdjust: number;
     expressAdjust: number;
     extremeGapAdjust: number;
+    oneSidedAdjust: number;
+    multiFriendDispersionAdjust: number;
     finalScore: number;
     gapMinutes: number;
   };
