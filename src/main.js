@@ -1508,6 +1508,18 @@ async function renderTopCandidates(results, options = {}) {
   const suitability = suitabilityLabel(item?.candidate?.tier, item?.candidate?.isPriority);
   const contextLabel = hotplaceAccessibilityLabel(item);
   const meetingIndex = meetingIndexScore(item);
+  const shiftedCandidates = String(item?.candidate?.shiftedFrom ?? "")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const shiftedNote = shiftedCandidates.length
+    ? `동일 환승거점 후보 ${shiftedCandidates.length}개를 하나로 묶어 비교했어요.`
+    : "";
+  const spreadMinutes = Math.max(0, Math.round((item?.maxMinutes ?? 0) - (item?.averageMinutes ?? 0)));
+  const balanceNote =
+    spreadMinutes <= 8
+      ? `친구별 이동시간 편차가 작아 균형이 좋아요 (편차 ${spreadMinutes}분).`
+      : `가장 오래 걸리는 친구 시간도 함께 고려해 편차를 줄였어요 (편차 ${spreadMinutes}분).`;
 
   const position = new kakao.maps.LatLng(lat, lng);
   const candidateMarker = addCandidateHighlightPin(position);
@@ -1540,14 +1552,18 @@ async function renderTopCandidates(results, options = {}) {
     <div class="mt-1 text-xs text-slate-600">라벨: ${contextLabel}</div>
     <div class="mt-1 text-xs font-bold text-coral-600">만남지수 ${meetingIndex}점</div>
     ${
-      item?.candidate?.shiftedFrom
-        ? `<div class="mt-1 text-xs text-slate-500">후보 보정: ${escapeHtml(item.candidate.shiftedFrom)} → ${escapeHtml(
-            item.candidate.name
-          )}</div>`
+      shiftedNote
+        ? `<div class="mt-1 text-xs text-slate-500">후보 통합: ${escapeHtml(shiftedNote)}</div>`
         : ""
     }
     <div class="mt-1 text-xs text-coral-600 font-bold">선정 이유: ${reasonText}</div>
+    <div class="mt-1 text-xs text-slate-500">${escapeHtml(balanceNote)}</div>
     <div class="mt-1 text-xs text-slate-600">평균 ${Math.round(item.averageMinutes)}분 · 최대 ${Math.round(item.maxMinutes)}분</div>
+    ${
+      shiftedNote
+        ? `<div class="mt-1 text-xs text-slate-500">${escapeHtml(shiftedNote)}</div>`
+        : ""
+    }
     <div class="mt-3">
       <button type="button" class="tap-press h-11 w-full rounded-2xl border border-coral-200 bg-coral-50 px-3 text-sm font-bold text-coral-600" data-action="details">세부 내용 조회</button>
     </div>
