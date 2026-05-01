@@ -42,6 +42,32 @@ function friendTimeGapMinutes(perFriend: CandidateEvaluation["perFriend"]): numb
   return Math.max(0, Math.max(...mins) - Math.min(...mins));
 }
 
+function percentileByRank(sorted: number[], ratio: number): number {
+  if (!sorted.length) return 0;
+  const rank = Math.ceil(ratio * sorted.length) - 1;
+  const idx = Math.max(0, Math.min(sorted.length - 1, rank));
+  return sorted[idx];
+}
+
+function friendFairnessSpreadMinutes(perFriend: CandidateEvaluation["perFriend"]): number {
+  const mins = perFriend
+    .map((p) => Number(p.route.totalMinutes ?? 0))
+    .filter((m) => Number.isFinite(m))
+    .sort((a, b) => a - b);
+  if (mins.length < 2) return 0;
+  if (mins.length === 2) return Math.max(0, mins[1] - mins[0]);
+  const p10 = percentileByRank(mins, 0.1);
+  const p90 = percentileByRank(mins, 0.9);
+  return Math.max(0, p90 - p10);
+}
+
+function stddev(values: number[]): number {
+  if (!values.length) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const variance = values.reduce((acc, v) => acc + (v - mean) ** 2, 0) / values.length;
+  return Math.sqrt(variance);
+}
+
 function applyFairnessFirstRanking(
   evaluations: CandidateEvaluation[],
   gapMin: number,
@@ -50,7 +76,7 @@ function applyFairnessFirstRanking(
   if (!Array.isArray(evaluations) || evaluations.length <= 1) return evaluations;
   const withGap = evaluations.map((ev) => ({
     ev,
-    gap: friendTimeGapMinutes(ev.perFriend),
+    gap: friendFairnessSpreadMinutes(ev.perFriend),
     commerce: commerceScaleBonus(ev.candidate.name)
   }));
   const currentTopGap = withGap[0]?.gap ?? 0;
@@ -73,14 +99,23 @@ function applyFairnessFirstRanking(
 
 function pickFairnessSecondary(
   evaluations: CandidateEvaluation[],
-  poolSize: number
+  poolSize: number,
+  maxGapDelta: number,
+  maxMaxMinutes: number
 ): CandidateEvaluation | null {
   if (!Array.isArray(evaluations) || evaluations.length < 2) return null;
+  const topSpread = friendFairnessSpreadMinutes(evaluations[0].perFriend);
   const pool = evaluations.slice(1, Math.max(2, poolSize));
   if (!pool.length) return null;
-  return [...pool].sort((a, b) => {
-    const gapA = friendTimeGapMinutes(a.perFriend);
-    const gapB = friendTimeGapMinutes(b.perFriend);
+  const constrained = pool.filter((candidate) => {
+    const spread = friendFairnessSpreadMinutes(candidate.perFriend);
+    const candidateMax = Math.max(...candidate.perFriend.map((p) => p.route.totalMinutes));
+    return spread <= topSpread + maxGapDelta && candidateMax <= maxMaxMinutes;
+  });
+  const source = constrained.length ? constrained : pool;
+  return [...source].sort((a, b) => {
+    const gapA = friendFairnessSpreadMinutes(a.perFriend);
+    const gapB = friendFairnessSpreadMinutes(b.perFriend);
     if (gapA !== gapB) return gapA - gapB;
     const commerceA = commerceScaleBonus(a.candidate.name);
     const commerceB = commerceScaleBonus(b.candidate.name);
@@ -294,6 +329,12 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
   const extremeGapPenaltyThresholdMin = Number(process.env.EXTREME_GAP_PENALTY_THRESHOLD_MIN ?? 35);
   const extremeGapPenaltyPerMinute = Number(process.env.EXTREME_GAP_PENALTY_PER_MINUTE ?? 1.2);
   const fairnessSecondaryPoolSize = Number(process.env.FAIRNESS_SECONDARY_POOL_SIZE ?? 6);
+  const fairnessSecondaryMaxGapDelta = Number(process.env.FAIRNESS_SECONDARY_MAX_GAP_DELTA ?? 5);
+  const fairnessSecondaryMaxMaxMinutes = Number(process.env.FAIRNESS_SECONDARY_MAX_MAX_MINUTES ?? 60);
+  const oneSidedMinThreshold = Number(process.env.ONE_SIDED_MINUTES_THRESHOLD ?? 10);
+  const oneSidedMedianThreshold = Number(process.env.ONE_SIDED_MEDIAN_THRESHOLD ?? 35);
+  const oneSidedPenalty = Number(process.env.ONE_SIDED_PENALTY ?? 18);
+  const multiFriendStddevWeight = Number(process.env.MULTI_FRIEND_STDDEV_WEIGHT ?? 0.8);
   let apiCallCount = 0;
 
   const dailyBudget = Number(process.env.DAILY_ODSAY_BUDGET ?? 15000);
@@ -338,6 +379,7 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
     refineCandidates = Math.max(refineCandidates, Math.min(twoUserRefineMin, maxCandidates));
     midpointRunMeta.usedRefineCandidates = refineCandidates;
   }
+  const outputTopN = Math.max(topN, friendPoints.length === 2 ? 5 : topN);
 
   const center = centroid(friendPoints.map((f) => f.point));
   async function evaluateCandidates(currentMaxCandidates: number, currentRefineCandidates: number) {
@@ -438,7 +480,26 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
         extremeGapAdjust =
           (gapMinutes - extremeGapPenaltyThresholdMin) * Math.max(0, extremeGapPenaltyPerMinute);
       }
-      evaluation.score = baseBalancedScore + tierAdjust + commerceAdjust + extremeGapAdjust;
+      const rawMinutes = evaluation.perFriend.map((p) => Number(p.route.totalMinutes ?? 0)).sort((a, b) => a - b);
+      let oneSidedAdjust = 0;
+      if (rawMinutes.length >= 2) {
+        const minMinutes = rawMinutes[0];
+        const medianMinutes = percentileByRank(rawMinutes, 0.5);
+        if (minMinutes <= oneSidedMinThreshold && medianMinutes >= oneSidedMedianThreshold) {
+          oneSidedAdjust = oneSidedPenalty;
+        }
+      }
+      let multiFriendDispersionAdjust = 0;
+      if (rawMinutes.length >= 3) {
+        multiFriendDispersionAdjust = stddev(rawMinutes) * Math.max(0, multiFriendStddevWeight);
+      }
+      evaluation.score =
+        baseBalancedScore +
+        tierAdjust +
+        commerceAdjust +
+        extremeGapAdjust +
+        oneSidedAdjust +
+        multiFriendDispersionAdjust;
 
       let expressAdjust = 0;
       const farRoutes = evaluation.perFriend.filter((p) => p.route.totalMinutes >= farMinutesThreshold);
@@ -455,6 +516,8 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
         commerceAdjust,
         expressAdjust,
         extremeGapAdjust,
+        oneSidedAdjust,
+        multiFriendDispersionAdjust,
         finalScore: evaluation.score,
         gapMinutes
       };
@@ -473,7 +536,7 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
   let evalRun = await evaluateCandidates(maxCandidates, refineCandidates);
   let finalEvaluations = evalRun.evaluations;
 
-  const topGap = friendTimeGapMinutes(finalEvaluations[0]?.perFriend ?? []);
+  const topGap = friendFairnessSpreadMinutes(finalEvaluations[0]?.perFriend ?? []);
   const canExpandSearch =
     friendPoints.length === 2 &&
     topGap >= autoRebalanceGapMin &&
@@ -498,7 +561,7 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
     }
   }
 
-  const beforeFairnessTopGap = friendTimeGapMinutes(finalEvaluations[0]?.perFriend ?? []);
+  const beforeFairnessTopGap = friendFairnessSpreadMinutes(finalEvaluations[0]?.perFriend ?? []);
   if (friendPoints.length === 2 && beforeFairnessTopGap >= fairnessModeGapMin) {
     const reordered = applyFairnessFirstRanking(finalEvaluations, fairnessModeGapMin, fairnessModeGapWindowMin);
     const firstChanged = reordered[0]?.candidate?.id !== finalEvaluations[0]?.candidate?.id;
@@ -509,9 +572,14 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
     finalEvaluations = reordered;
   }
   if (friendPoints.length === 2 && finalEvaluations.length >= 2) {
-    const topGapAfterFairness = friendTimeGapMinutes(finalEvaluations[0].perFriend);
+    const topGapAfterFairness = friendFairnessSpreadMinutes(finalEvaluations[0].perFriend);
     if (topGapAfterFairness >= fairnessModeGapMin) {
-      const secondary = pickFairnessSecondary(finalEvaluations, fairnessSecondaryPoolSize);
+      const secondary = pickFairnessSecondary(
+        finalEvaluations,
+        fairnessSecondaryPoolSize,
+        fairnessSecondaryMaxGapDelta,
+        fairnessSecondaryMaxMaxMinutes
+      );
       if (secondary && secondary.candidate.id !== finalEvaluations[0].candidate.id) {
         const rest = finalEvaluations.filter(
           (ev) => ev.candidate.id !== finalEvaluations[0].candidate.id && ev.candidate.id !== secondary.candidate.id
@@ -537,5 +605,5 @@ export async function findMidpoints(req: MidpointRequest): Promise<CandidateEval
     elapsedMs: Date.now() - startedAt
   });
 
-  return finalEvaluations.slice(0, topN);
+  return finalEvaluations.slice(0, outputTopN);
 }

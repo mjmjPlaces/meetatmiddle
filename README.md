@@ -51,6 +51,12 @@
 - `EXTREME_GAP_PENALTY_THRESHOLD_MIN`: 극단 편차 추가 패널티 시작 분(기본 35분)
 - `EXTREME_GAP_PENALTY_PER_MINUTE`: 임계치 초과 1분당 가산 패널티(기본 1.2)
 - `FAIRNESS_SECONDARY_POOL_SIZE`: 고편차 시 서버가 2순위(공정성 후보) 선정을 위해 보는 상위 풀 크기(기본 6)
+- `FAIRNESS_SECONDARY_MAX_GAP_DELTA`: 2순위 후보는 1순위 대비 시간차 허용 범위 내에서만 선발(기본 +5분)
+- `FAIRNESS_SECONDARY_MAX_MAX_MINUTES`: 2순위 후보의 최장 이동시간 상한(기본 60분)
+- `ONE_SIDED_MINUTES_THRESHOLD`: 한 명만 지나치게 가까운 패턴 감지용 최소시간 임계치(기본 10분)
+- `ONE_SIDED_MEDIAN_THRESHOLD`: 나머지가 오래 걸리는 패턴 감지용 중앙값 임계치(기본 35분)
+- `ONE_SIDED_PENALTY`: 한쪽만 유리한 패턴에 부여할 추가 패널티(기본 18)
+- `MULTI_FRIEND_STDDEV_WEIGHT`: 3인 이상에서 표준편차 기반 분산 패널티 가중치(기본 0.8)
 
 ## 운영 API
 - `GET /api/ops/metrics`: API 호출량/캐시 효율/현재 degraded 모드 상태 확인
