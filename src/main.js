@@ -87,6 +87,7 @@ let currentShareSessionId = "";
 const selectionRecordedBySid = new Set();
 const DUAL_CANDIDATE_SPREAD_MIN = 18;
 const DUAL_CANDIDATE_SCORE_GAP_MAX = 6;
+const DUAL_CANDIDATE_HARD_GAP_MIN = 35;
 
 const FRIEND_ROUTE_COLORS = ["#E53935", "#1E88E5", "#43A047", "#FB8C00", "#8E24AA", "#00897B"];
 
@@ -548,14 +549,24 @@ async function recordSessionEvents(events) {
   }
 }
 
-function shouldShowDualCandidates(results) {
-  if (!Array.isArray(results) || results.length < 2) return false;
+function getDualCandidateMode(results) {
+  if (!Array.isArray(results) || results.length < 2) {
+    return { enabled: false, reason: "none" };
+  }
   const first = results[0];
   const second = results[1];
-  if (!first || !second) return false;
+  if (!first || !second) {
+    return { enabled: false, reason: "none" };
+  }
   const spread = getFriendTimeGapMinutes(first);
   const scoreGap = Number((second?.score ?? 0) - (first?.score ?? 0));
-  return spread >= DUAL_CANDIDATE_SPREAD_MIN && scoreGap <= DUAL_CANDIDATE_SCORE_GAP_MAX;
+  if (spread >= DUAL_CANDIDATE_HARD_GAP_MIN) {
+    return { enabled: true, reason: "hard_gap" };
+  }
+  if (spread >= DUAL_CANDIDATE_SPREAD_MIN && scoreGap <= DUAL_CANDIDATE_SCORE_GAP_MAX) {
+    return { enabled: true, reason: "close_score" };
+  }
+  return { enabled: false, reason: "none" };
 }
 
 function buildCompactSharePayload(item, address, reasonText) {
@@ -1522,7 +1533,8 @@ async function renderTopCandidates(results, options = {}) {
   clearMapObjects();
   cardsEl.innerHTML = "";
   if (!results?.length) return;
-  const dualMode = shouldShowDualCandidates(results);
+  const dualModeInfo = getDualCandidateMode(results);
+  const dualMode = dualModeInfo.enabled;
   const shownItems = dualMode ? results.slice(0, 2) : results.slice(0, 1);
   const item = shownItems[0];
   lastResults = shownItems;
@@ -1530,7 +1542,10 @@ async function renderTopCandidates(results, options = {}) {
     const compareBanner = document.createElement("div");
     compareBanner.className =
       "rounded-2xl border border-coral-200 bg-coral-50 px-3 py-2 text-xs font-semibold text-coral-700";
-    compareBanner.textContent = "시간 편차가 큰 케이스라 상위 2개 후보를 함께 보여드려요. 상황에 맞는 곳을 선택해 주세요.";
+    compareBanner.textContent =
+      dualModeInfo.reason === "hard_gap"
+        ? "친구 간 시간차가 큰 케이스라 공정성 보완용 후보를 함께 보여드려요. 상황에 맞는 곳을 선택해 주세요."
+        : "시간 편차가 큰 케이스라 상위 2개 후보를 함께 보여드려요. 상황에 맞는 곳을 선택해 주세요.";
     cardsEl.appendChild(compareBanner);
   }
 
